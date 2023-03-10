@@ -1,0 +1,17 @@
+host: 0.0.0.0
+port: 8001
+transfer_params_path: "./params/transfer_params.bin"
+db_path: "./data"
+relayer_url: "https://relayer.thgkjlr.website"
+admin_token: "123"
+telemetry:
+  kind: Stdout
+  log_level: INFO
+  service_name: zkbob-cloud
+version:
+  ref_name: "main"
+  commit_hash: "some_commit_hash"
+web3:
+  provider_endpoint: "https://rpc.sepolia.org"
+  provider_timeout_sec: 10
+  pool_address: "0x3bd088C19960A8B5d72E4e01847791BD0DD1C9E6"
