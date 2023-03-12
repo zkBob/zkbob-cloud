@@ -7,11 +7,13 @@ use zkbob_utils_rs::tracing;
 
 use crate::errors::CloudError;
 
-use self::{types::{SignupRequest, SignupResponse, AccountInfoRequest, GenerateAddressResponse}, cloud::ZkBobCloud};
+use self::{types::{SignupRequest, SignupResponse, AccountInfoRequest, GenerateAddressResponse, TransferRequest, Transfer, TransferResponse}, cloud::ZkBobCloud};
 
 pub mod cloud;
 pub mod types;
 mod db;
+mod queue;
+mod send_worker;
 
 pub async fn signup(
     request: Json<SignupRequest>,
@@ -89,4 +91,23 @@ pub async fn history(
     let history = cloud.history(account_id).await?;
 
     Ok(HttpResponse::Ok().json(history))
+}
+
+pub async fn transfer(
+    request: Json<TransferRequest>,
+    cloud: Data<ZkBobCloud>,
+) -> Result<HttpResponse, CloudError> {
+    let account_id = Uuid::from_str(&request.account_id).map_err(|err| {
+        tracing::debug!("failed to parse account id: {}", err);
+        CloudError::IncorrectAccountId
+    })?;
+
+    let request_id = cloud.transfer(Transfer{
+        id: request.request_id.clone().unwrap_or(Uuid::new_v4().as_hyphenated().to_string()),
+        account_id,
+        amount: request.amount,
+        to: request.to.clone(),
+    }).await?;
+
+    Ok(HttpResponse::Ok().json(TransferResponse{ request_id }))
 }

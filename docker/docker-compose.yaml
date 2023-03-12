@@ -1,0 +1,9 @@
+version: '3.8'
+
+services:
+  zkbob-cloud-redis:
+    image: redis:6.2.6
+    container_name: zkbob-cloud-redis
+    command: [redis-server]
+    ports:
+      - 6379:6379

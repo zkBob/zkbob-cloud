@@ -1,39 +1,55 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc, time::Duration, thread};
 
-use libzkbob_rs::libzeropool::fawkes_crypto::ff_uint::Num;
+use actix_web::web::Data;
+use libzkbob_rs::libzeropool::fawkes_crypto::{ff_uint::Num, backend::bellman_groth16::Parameters};
 use tokio::sync::RwLock;
 use uuid::Uuid;
 use zkbob_utils_rs::{tracing, contracts::pool::Pool};
 
-use crate::{account::{Account, types::{AccountShortInfo, HistoryTx}}, config::Config, errors::CloudError, Fr, relayer::cached::CachedRelayerClient};
+use crate::{account::{Account, types::{AccountShortInfo, HistoryTx}}, config::Config, errors::CloudError, Fr, relayer::cached::CachedRelayerClient, cloud::types::{TransferTask, TransferPart, TransferStatus}, Engine};
 
-use super::db::Db;
+use super::{db::Db, types::{TransferRequest, TransferResponse, Transfer}, queue::Queue, send_worker::run_send_worker};
 
 pub struct ZkBobCloud {
-    config: Config,
-    db: RwLock<Db>,
-    pool_id: Num<Fr>,
+    pub(crate) config: Config,
+    pub(crate) db: RwLock<Db>,
+    pub(crate) pool_id: Num<Fr>,
+    pub(crate) params: Parameters<Engine>,
     
-    relayer_fee: u64,
-    relayer: Arc<CachedRelayerClient>,
-    pool: Pool,
+    pub(crate) relayer_fee: u64,
+    pub(crate) relayer: Arc<CachedRelayerClient>,
+    pub(crate) pool: Pool,
 
-    accounts: RwLock<HashMap<Uuid, Arc<Account>>>
+    pub(crate) send_queue: RwLock<Queue>,
+    pub(crate) status_queue: RwLock<Queue>,
+
+    pub(crate) accounts: RwLock<HashMap<Uuid, Arc<Account>>>
 }
 
 impl ZkBobCloud {
-    pub fn new(config: Config, pool: Pool, pool_id: Num<Fr>) -> Result<Self, CloudError> {
+    pub async fn new(config: Config, pool: Pool, pool_id: Num<Fr>, params: Parameters<Engine>) -> Result<Data<Self>, CloudError> {
         let db = Db::new(&config.db_path)?;
         let relayer = CachedRelayerClient::new(&config.relayer_url, &config.db_path)?;
-        Ok(Self {
+
+        let send_queue = RwLock::new(Queue::new("send", &config.redis_url).await?);
+        let status_queue = RwLock::new(Queue::new("status", &config.redis_url).await?);
+
+        let cloud = Data::new(Self {
             config,
             db: RwLock::new(db),
             pool_id,
-            relayer_fee: 10000, // TODO: fetch from relayer
+            params,
+            relayer_fee: 100000000, // TODO: fetch from relayer
             relayer: Arc::new(relayer),
             pool,
+            send_queue,
+            status_queue,
             accounts: RwLock::new(HashMap::new())
-        })
+        });
+
+        run_send_worker(cloud.clone()).await?;
+
+        Ok(cloud)
     }
 
     pub async fn new_account(&self, description: String, id: Option<Uuid>, sk: Option<Vec<u8>>) -> Result<Uuid, CloudError> {
@@ -68,6 +84,39 @@ impl ZkBobCloud {
         history
     }
 
+    pub async fn transfer(&self, request: Transfer) -> Result<String, CloudError> {
+        let account = self.get_account(request.account_id).await?;
+        account.sync(self.relayer.clone()).await?;
+
+        let tx_parts = account.get_tx_parts(request.amount, self.relayer_fee, request.to).await?;
+        
+        let mut send_queue = self.send_queue.write().await;
+        let mut task = TransferTask{ request_id: request.id.clone(), parts: Vec::new() };
+        let mut parts = Vec::new();
+        for (i, tx_part) in tx_parts.into_iter().enumerate() {
+            let part = TransferPart {
+                id: format!("{}.{}", &request.id, i),
+                request_id: request.id.clone(),
+                account_id: request.account_id.to_string(),
+                amount: tx_part.1,
+                fee: self.relayer_fee,
+                to: tx_part.0,
+                status: TransferStatus::New,
+                job_id: None,
+                tx_hash: None,
+                depends_on: (i > 0).then_some(format!("{}.{}", &request.id, i - 1)),
+            };
+            parts.push(part);
+            task.parts.push(format!("{}.{}", &request.id, i));
+        }
+
+        self.db.write().await.save_task(task, &parts)?;
+        for part in parts {
+            send_queue.send(part).await?;
+        }
+
+        Ok(request.id)
+    }
 
     pub fn validate_token(&self, bearer_token: &str) -> Result<(), CloudError> {
         if self.config.admin_token != bearer_token {
@@ -76,7 +125,7 @@ impl ZkBobCloud {
         Ok(())
     }
 
-    async fn get_account(&self, id: Uuid) -> Result<Arc<Account>, CloudError> {
+    pub(crate) async fn get_account(&self, id: Uuid) -> Result<Arc<Account>, CloudError> {
         let db_path = self.db.read().await.get_account(id)?.ok_or(CloudError::AccountNotFound)?;
 
         let mut accounts = self.accounts.write().await;
@@ -91,7 +140,7 @@ impl ZkBobCloud {
         Ok(account)
     }
 
-    async fn release_account(&self, id: Uuid) {
+    pub(crate) async fn release_account(&self, id: Uuid) {
         let mut accounts = self.accounts.write().await;
         if accounts.contains_key(&id) {
             accounts.remove(&id);

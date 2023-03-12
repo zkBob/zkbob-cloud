@@ -3,6 +3,8 @@ use uuid::Uuid;
 
 use crate::{errors::CloudError, Database};
 
+use super::types::{TransferTask, TransferPart};
+
 pub(crate) struct Db {
     db_path: String,
     db: Database,
@@ -35,6 +37,31 @@ impl Db {
         format!("{}/accounts_data/{}", self.db_path, id.as_hyphenated())
     }
 
+    pub fn save_task(&mut self, task: TransferTask, parts: &Vec<TransferPart>) -> Result<(), CloudError> {
+        let mut tx = self.db.transaction();
+
+        let task_bytes = serde_json::to_vec(&task).map_err(|err| CloudError::DataBaseWriteError(err.to_string()))?;
+        tx.put_vec(CloudDbColumn::Tasks.into(), task.request_id.as_bytes(), task_bytes);
+
+        for part in parts {
+            let task_part_bytes = serde_json::to_vec(&part).map_err(|err| CloudError::DataBaseWriteError(err.to_string()))?;
+            tx.put_vec(CloudDbColumn::Tasks.into(), part.id.as_bytes(), task_part_bytes);
+        }
+
+        self.db.write(tx).map_err(|err| CloudError::DataBaseWriteError(err.to_string()))
+    }
+
+    pub fn save_part(&mut self, part: &TransferPart) -> Result<(), CloudError> {
+        let bytes = serde_json::to_vec(&part).map_err(|err| CloudError::DataBaseWriteError(err.to_string()))?;
+        self.save(CloudDbColumn::Tasks, &part.id, &bytes)
+    }
+
+    pub fn get_part(&self, id: &str) -> Result<TransferPart, CloudError> {
+        let bytes = self.get(CloudDbColumn::Tasks, id)?
+            .ok_or(CloudError::InternalError("task not found".to_string()))?;
+        serde_json::from_slice(&bytes).map_err(|err| CloudError::DataBaseReadError(err.to_string()))
+    }
+
     fn save(&mut self, column: CloudDbColumn, key: &str, value: &[u8]) -> Result<(), CloudError> {
         self.db
             .write({
@@ -54,14 +81,12 @@ impl Db {
 
 pub enum CloudDbColumn {
     Accounts,
-    JobsIndex,
-    TxRequestIndex,
-    NullifierIndex,
+    Tasks
 }
 
 impl CloudDbColumn {
     pub fn count() -> u32 {
-        4
+        2
     }
 }
 

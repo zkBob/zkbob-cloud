@@ -11,6 +11,7 @@ pub struct Config {
     pub transfer_params_path: String,
     pub db_path: String,
     pub relayer_url: String,
+    pub redis_url: String,
     pub admin_token: String,
     pub telemetry: TelemetrySettings,
     pub version: Version,
