@@ -21,6 +21,8 @@ actix-cors="0.6.2"
 hex = { version = "0.4.3", features = ["serde"] }
 actix-web-httpauth = "0.8.0"
 rayon = "1.5.1"
+web3= { git = "https://github.com/r0wdy1/rust-web3", branch = "logs_txhash" }
+memo-parser = {git = "https://github.com/zkBob/memo-parser", branch = "main"}
 
 
 [patch.crates-io]

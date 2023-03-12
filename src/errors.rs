@@ -94,3 +94,9 @@ impl From<zkbob_utils_rs::relayer::error::RelayerError> for CloudError {
         Self::RelayerSendError
     }
 }
+
+impl From<zkbob_utils_rs::contracts::error::PoolError> for CloudError {
+    fn from(e: zkbob_utils_rs::contracts::error::PoolError) -> Self {
+        Self::InternalError(e.to_string())
+    }
+}

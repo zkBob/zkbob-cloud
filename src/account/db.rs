@@ -6,6 +6,8 @@ use libzkbob_rs::{
 
 use crate::{errors::CloudError, Database, Fr, PoolParams};
 
+use super::tx_parser::DecMemo;
+
 pub(crate) struct Db {
     db_path: String,
 
@@ -74,6 +76,29 @@ impl Db {
         .map_err(|err| CloudError::InternalError(err.to_string()))
     }
 
+    pub fn save_memos(&mut self, memos: Vec<DecMemo>) -> Result<(), CloudError> {
+        self.history.write({
+            let mut tx = self.history.transaction();
+            for memo in memos {
+                let key = &memo.index.to_be_bytes();
+                let memo = serde_json::to_vec(&memo)
+                    .map_err(|err| CloudError::InternalError(err.to_string()))?;
+                tx.put_vec(HistoryDbColumn::Memo.into(), key, memo);
+            }
+            tx
+        }).map_err(|err| CloudError::DataBaseWriteError(err.to_string()))
+    }
+
+    pub fn get_memos(&self) -> Result<Vec<DecMemo>, CloudError> {
+        let mut memos = vec![];
+        for (_, v) in self.history.iter(HistoryDbColumn::Memo.into()) {
+            let memo: DecMemo = serde_json::from_slice(&v)
+                .map_err(|err| CloudError::DataBaseReadError(err.to_string()))?;
+            memos.push(memo);
+        }
+        Ok(memos)
+    }
+
     fn save_db(&mut self, key: &str, value: &[u8]) -> Result<(), CloudError> {
         self.db
             .write({
@@ -87,6 +112,22 @@ impl Db {
     fn get_db(&self, key: &str) -> Result<Option<Vec<u8>>, CloudError> {
         self.db
             .get(AccountDbColumn::General.into(), key.as_bytes())
+            .map_err(|err| CloudError::DataBaseReadError(err.to_string()))
+    }
+
+    fn save_history(&mut self, column: HistoryDbColumn, key: &[u8], value: &[u8]) -> Result<(), CloudError> {
+        self.db
+            .write({
+                let mut tx = self.db.transaction();
+                tx.put(column.into(), key, value);
+                tx
+            })
+            .map_err(|err| CloudError::DataBaseWriteError(err.to_string()))
+    }
+
+    fn get_history(&self, column: HistoryDbColumn, key: &[u8]) -> Result<Option<Vec<u8>>, CloudError> {
+        self.db
+            .get(column.into(), key)
             .map_err(|err| CloudError::DataBaseReadError(err.to_string()))
     }
 }
@@ -108,8 +149,8 @@ impl Into<u32> for AccountDbColumn {
 }
 
 pub enum HistoryDbColumn {
-    NotesIndex,
-    BlockTimestampsCache,
+    Memo,
+    Web3,
 }
 
 impl HistoryDbColumn {

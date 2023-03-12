@@ -76,3 +76,17 @@ pub async fn generate_shielded_address(
 
     Ok(HttpResponse::Ok().json(GenerateAddressResponse { address }))
 }
+
+pub async fn history(
+    request: Query<AccountInfoRequest>,
+    cloud: Data<ZkBobCloud>,
+) -> Result<HttpResponse, CloudError> {
+    let account_id = Uuid::from_str(&request.id).map_err(|err| {
+        tracing::debug!("failed to parse account id: {}", err);
+        CloudError::IncorrectAccountId
+    })?;
+
+    let history = cloud.history(account_id).await?;
+
+    Ok(HttpResponse::Ok().json(history))
+}

@@ -2,6 +2,7 @@
 
 use libzkbob_rs::{libzeropool::{fawkes_crypto::ff_uint::{Num, NumRepr, Uint, byteorder::{ReadBytesExt, LittleEndian}}, native::{account::Account, note::Note, key::derive_key_p_d, cipher}, constants}, delegated_deposit::{MEMO_DELEGATED_DEPOSIT_SIZE, MemoDelegatedDeposit, DELEGATED_DEPOSIT_FLAG}, utils::zero_account, keys::Keys};
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
+use serde::{Serialize, Deserialize};
 use thiserror::Error;
 
 use crate::{relayer::cached::Transaction, Fr, PoolParams, errors::CloudError};
@@ -23,7 +24,7 @@ impl ParseError {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct IndexedNote {
     pub index: u64,
     pub note: Note<Fr>,
@@ -37,7 +38,7 @@ pub struct StateUpdate {
     pub new_notes: Vec<Vec<(u64, Note<Fr>)>>
 }
 
-#[derive(Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 pub struct DecMemo {
     pub index: u64,
     pub acc: Option<Account<Fr>>,

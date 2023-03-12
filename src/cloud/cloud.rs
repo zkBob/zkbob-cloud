@@ -3,9 +3,9 @@ use std::{collections::HashMap, sync::Arc};
 use libzkbob_rs::libzeropool::fawkes_crypto::ff_uint::Num;
 use tokio::sync::RwLock;
 use uuid::Uuid;
-use zkbob_utils_rs::tracing;
+use zkbob_utils_rs::{tracing, contracts::pool::Pool};
 
-use crate::{account::{Account, types::AccountShortInfo}, config::Config, errors::CloudError, Fr, relayer::cached::CachedRelayerClient};
+use crate::{account::{Account, types::{AccountShortInfo, HistoryTx}}, config::Config, errors::CloudError, Fr, relayer::cached::CachedRelayerClient};
 
 use super::db::Db;
 
@@ -16,12 +16,13 @@ pub struct ZkBobCloud {
     
     relayer_fee: u64,
     relayer: Arc<CachedRelayerClient>,
+    pool: Pool,
 
     accounts: RwLock<HashMap<Uuid, Arc<Account>>>
 }
 
 impl ZkBobCloud {
-    pub fn new(config: Config, pool_id: Num<Fr>) -> Result<Self, CloudError> {
+    pub fn new(config: Config, pool: Pool, pool_id: Num<Fr>) -> Result<Self, CloudError> {
         let db = Db::new(&config.db_path)?;
         let relayer = CachedRelayerClient::new(&config.relayer_url, &config.db_path)?;
         Ok(Self {
@@ -30,6 +31,7 @@ impl ZkBobCloud {
             pool_id,
             relayer_fee: 10000, // TODO: fetch from relayer
             relayer: Arc::new(relayer),
+            pool,
             accounts: RwLock::new(HashMap::new())
         })
     }
@@ -57,6 +59,13 @@ impl ZkBobCloud {
         let address = account.generate_address().await;
         self.release_account(id).await;
         Ok(address)
+    }
+
+    pub async fn history(&self, id: Uuid) -> Result<Vec<HistoryTx>, CloudError> {
+        let account = self.get_account(id).await?;
+        let history = account.history(&self.pool).await;
+        self.release_account(id).await;
+        history
     }
 
 
