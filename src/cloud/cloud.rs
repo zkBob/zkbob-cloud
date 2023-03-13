@@ -86,6 +86,14 @@ impl ZkBobCloud {
     }
 
     pub async fn transfer(&self, request: Transfer) -> Result<String, CloudError> {
+        if request.id.contains(".") {
+            return Err(CloudError::InvalidTransactionId);
+        }
+
+        if self.db.read().await.task_exists(&request.id)? {
+            return Err(CloudError::DuplicateTransactionId);
+        }
+
         let account = self.get_account(request.account_id).await?;
         account.sync(self.relayer.clone()).await?;
 

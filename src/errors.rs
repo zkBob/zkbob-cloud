@@ -15,6 +15,8 @@ pub enum CloudError {
     IncorrectAccountId,
     #[error("bad account id")]
     AccountNotFound,
+    #[error("request id cannot contain '.'")]
+    InvalidTransactionId,
     #[error("request id already exists")]
     DuplicateTransactionId,
     #[error("internal error")]
