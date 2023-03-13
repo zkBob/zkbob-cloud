@@ -1,6 +1,6 @@
 // TODO: move tx_parser to libzkbob.rs and use that one
 
-use libzkbob_rs::{libzeropool::{fawkes_crypto::ff_uint::{Num, NumRepr, Uint, byteorder::{ReadBytesExt, LittleEndian}}, native::{account::Account, note::Note, key::derive_key_p_d, cipher}, constants}, delegated_deposit::{MEMO_DELEGATED_DEPOSIT_SIZE, MemoDelegatedDeposit, DELEGATED_DEPOSIT_FLAG}, utils::zero_account, keys::Keys};
+use libzkbob_rs::{libzeropool::{fawkes_crypto::ff_uint::{Num, NumRepr, Uint, byteorder::{ReadBytesExt, LittleEndian}}, native::{account::Account, note::Note, key::derive_key_p_d, cipher}, constants}, delegated_deposit::{MEMO_DELEGATED_DEPOSIT_SIZE, MemoDelegatedDeposit, DELEGATED_DEPOSIT_FLAG}, utils::zero_account};
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use serde::{Serialize, Deserialize};
 use thiserror::Error;

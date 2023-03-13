@@ -24,37 +24,37 @@ pub(crate) async fn run_send_worker(cloud: Data<ZkBobCloud>, check_status_queue:
                 Ok(Some((redis_id, id))) => {
                     let cloud = cloud.clone();
                     let check_status_queue = check_status_queue.clone();
-                    tokio::task::spawn(async move {
-                        println!("status: {:?}", &id);
-                        let process_result = process_part(cloud.clone(), id.clone()).await;
-                        println!("status: {:?}", &process_result);
-                        if process_result.update.is_some() {
-                            match cloud.db.write().await.save_part(&process_result.update.unwrap()) {
-                                Ok(_) => {},
-                                Err(err) => {
+                    thread::spawn(move || {
+                        let rt = tokio::runtime::Runtime::new().unwrap();
+                        rt.block_on(async {
+                            let process_result = process_part(cloud.clone(), id.clone()).await;
+                            if process_result.update.is_some() {
+                                if let Err(err) = cloud.db.write().await.save_part(&process_result.update.unwrap()) {
+                                    tracing::error!("[send task: {}] failed to save processed task in db: {}", &id, err);
                                     return;
                                 }
                             }
-                        }
 
-                        if process_result.check_status {
-                            match check_status_queue.write().await.send(id).await {
-                                Ok(_) => {},
-                                Err(err) => {
+                            if process_result.check_status {
+                                if let Err(err) = check_status_queue.write().await.send(id.clone()).await {
+                                    tracing::error!("[send task: {}] failed to send task to check status queue: {}", &id, err);
                                     return;
                                 }
                             }
-                        }
-                        
-                        if process_result.delete {
-                            let mut send_queue = cloud.send_queue.write().await;
-                            send_queue.delete(&redis_id).await;
-                        }
+                            
+                            if process_result.delete {
+                                let mut send_queue = cloud.send_queue.write().await;
+                                if let Err(err) = send_queue.delete(&redis_id).await {
+                                    tracing::error!("[send task: {}] failed to delete task from queue: {}", &id, err);
+                                    return;
+                                }
+                            }
+                        })
                     });
                 },
                 Ok(None) => { },
                 Err(err) => {
-                    tracing::error!("{}", err.to_string());
+                    tracing::error!("failed to recieve task from send queue: {}", err.to_string());
                 }
             }
             thread::sleep(Duration::from_millis(500));
@@ -64,81 +64,75 @@ pub(crate) async fn run_send_worker(cloud: Data<ZkBobCloud>, check_status_queue:
 }
 
 async fn process_part(cloud: Data<ZkBobCloud>, id: String) -> ProcessResult {
-    // 1. Check that task is new
-    let part = get_part(cloud.clone(), &id).await;
-    if let Err(err) = part {
-        return ProcessResult {
-            delete: true,
-            check_status: false,
-            update: None,
+    tracing::info!("[send task: {}] processing...", &id);
+
+    let part = match get_part(cloud.clone(), &id).await {
+        Ok(part) => part,
+        Err(err) => {
+            tracing::error!("[send task: {}] cannot get task from db: {}, deleting task", &id, err);
+            return ProcessResult::delete_from_queue();
         }
-    }
-    let part = part.unwrap();
+    };
 
     match part.status.clone() {
-        TransferStatus::New => {
-            // nothing to do
-        },
-        TransferStatus::Relaying => {
-            return ProcessResult {
-                delete: true,
-                check_status: true,
-                update: None,
-            }
-        },
+        TransferStatus::New => {},
+        TransferStatus::Relaying | TransferStatus::Mining => {
+            tracing::warn!("[send task: {}] task has status Relaying or Mining, trying to initiate check status again", &id);
+            return ProcessResult::repeat_check_status();
+        }
         status => {
-            return ProcessResult {
-                delete: true,
-                check_status: false,
-                update: None,
-            }
+            tracing::warn!("[send task: {}] task has status {:?}, deleting task", &id, status);
+            return ProcessResult::delete_from_queue();
         }
     }
     
-    // 2. Check that previous task have already been accepted by relayer
     if part.depends_on.is_some() {
         match part_status(cloud.clone(), part.depends_on.as_ref().unwrap()).await {
-            Ok(TransferStatus::Relaying | TransferStatus::Mining | TransferStatus::Done) => {
-                // nothing to do
-            },
-            Ok(TransferStatus::Failed(err)) => {
+            Ok(TransferStatus::Mining | TransferStatus::Done) => { },
+            Ok(TransferStatus::Failed(_)) => {
+                tracing::warn!("[send task: {}] previous task has failed, marking task as failed", &id);
                 return ProcessResult::error_without_retry(part, CloudError::PreviousTxFailed)
             },
             Ok(status) => {
+                tracing::debug!("[send task: {}] previous task has status {:?}, postpone task", &id, status);
                 return ProcessResult::retry_later();
             },
             Err(err) => {
+                tracing::warn!("[send task: {}] failed to get status of previous task, retry attempt: {}", &id, part.attempt);
                 return ProcessResult::error_with_retry_attempts(part, err);
             }
         }
     }
 
-    // 3. Get account
-    let account_id = Uuid::from_str(&part.account_id);
-    if let Err(err) = account_id {
-        return ProcessResult::error_without_retry(part, CloudError::IncorrectAccountId);
-    }
-    let account_id = account_id.unwrap();
+    let account_id = match Uuid::from_str(&part.account_id) {
+        Ok(account_id) => account_id,
+        Err(_) => {
+            tracing::error!("[send task: {}] failed to parse account id: {}, marking task as failed", &id, &part.account_id);
+            return ProcessResult::error_without_retry(part, CloudError::IncorrectAccountId);
+        }
+    };
 
     let tx = {
-        let account = cloud.get_account(account_id).await;
-        if let Err(err) = account {
-            return ProcessResult::error_with_retry_attempts(part, err);
-        }
-        let account = account.unwrap();
+        let account = match cloud.get_account(account_id).await {
+            Ok(account) => account,
+            Err(err) => {
+                tracing::warn!("[send task: {}] failed to get account, retry attempt: {}", &id, part.attempt);
+                return ProcessResult::error_with_retry_attempts(part, err);
+            }
+        };
         
-        // Prepare tx with optimistic state
-        let tx = account.create_transfer(part.amount, part.to.clone(), part.fee, cloud.relayer.clone()).await;
-        if let Err(err) = tx {
-            return ProcessResult::error_with_retry_attempts(part, err);
-        }
-        cloud.release_account(account_id).await;
-    
-        tx.unwrap()
+        let tx = match account.create_transfer(part.amount, part.to.clone(), part.fee, cloud.relayer.clone()).await {
+            Ok(tx) => tx,
+            Err(err) => {
+                tracing::warn!("[send task: {}] failed to create transfer, retry attempt: {}", &id, part.attempt);
+                return ProcessResult::error_with_retry_attempts(part, err);
+            }
+        };
+        cloud.release_account(account_id).await;    
+        tx
     };
     
-    // Prove tx
-    let proving_span = tracing::info_span!("proving", request_id = part.request_id.clone());
+    let proving_span = tracing::info_span!("proving", task_id = &part.id);
     let (inputs, proof) = proving_span.in_scope(|| {
         prove_tx(
             &cloud.params,
@@ -148,7 +142,6 @@ async fn process_part(cloud: Data<ZkBobCloud>, id: String) -> ProcessResult {
         )
     });
 
-    // 5. Send tx to relayer
     let proof = Proof { inputs, proof };
     let request = vec![TransactionRequest {
         uuid: Some(Uuid::new_v4().to_string()),
@@ -157,25 +150,17 @@ async fn process_part(cloud: Data<ZkBobCloud>, id: String) -> ProcessResult {
         tx_type: format!("{:0>4}", TxType::Transfer.to_u32()),
         deposit_signature: None,
     }];
-    let response = cloud.relayer.send_transactions(request).await;
-    
-    if let Err(err) = response {
-        return ProcessResult::error_with_retry_attempts(part, err);
-    }
-    let response = response.unwrap();
 
-    let part = TransferPart {
-        status: TransferStatus::Relaying,
-        job_id: Some(response.job_id),
-        attempt: 0,
-        ..part
+    let response = match cloud.relayer.send_transactions(request).await {
+        Ok(response) => response,
+        Err(err) => {
+            tracing::warn!("[send task: {}] failed send transfer to relayer, retry attempt: {}", &id, part.attempt);
+            return ProcessResult::error_with_retry_attempts(part, err);
+        }
     };
 
-    return ProcessResult {
-        delete: true,
-        check_status: true,
-        update: Some(part),
-    };
+    tracing::info!("[send task: {}] processed successfully, job_id: {}", &id, &response.job_id);
+    ProcessResult::success(part, response.job_id)    
 }
 
 #[derive(Debug)]
@@ -186,10 +171,41 @@ struct ProcessResult {
 }
 
 impl ProcessResult {
+    fn success(part: TransferPart, job_id: String) -> ProcessResult {
+        let part = TransferPart {
+            status: TransferStatus::Relaying,
+            job_id: Some(job_id),
+            attempt: 0,
+            ..part
+        };
+    
+        return ProcessResult {
+            delete: true,
+            check_status: true,
+            update: Some(part),
+        };
+    }
+
     fn retry_later() -> ProcessResult {
         return ProcessResult {
             delete: false,
             check_status: false,
+            update: None,
+        };
+    }
+
+    fn delete_from_queue() -> ProcessResult {
+        return ProcessResult {
+            delete: true,
+            check_status: false,
+            update: None,
+        };
+    }
+
+    fn repeat_check_status() -> ProcessResult {
+        return ProcessResult {
+            delete: true,
+            check_status: true,
             update: None,
         };
     }

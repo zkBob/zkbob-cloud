@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc, time::Duration, thread};
+use std::{collections::HashMap, sync::Arc};
 
 use actix_web::web::Data;
 use libzkbob_rs::libzeropool::fawkes_crypto::{ff_uint::Num, backend::bellman_groth16::Parameters};
@@ -8,7 +8,7 @@ use zkbob_utils_rs::{tracing, contracts::pool::Pool};
 
 use crate::{account::{Account, types::{AccountShortInfo, HistoryTx}}, config::Config, errors::CloudError, Fr, relayer::cached::CachedRelayerClient, cloud::types::{TransferTask, TransferPart, TransferStatus}, Engine};
 
-use super::{db::Db, types::{TransferRequest, TransferResponse, Transfer}, queue::Queue, send_worker::run_send_worker, status_worker::run_status_worker};
+use super::{db::Db, types::Transfer, queue::Queue, send_worker::run_send_worker, status_worker::run_status_worker};
 
 pub struct ZkBobCloud {
     pub(crate) config: Config,
@@ -91,7 +91,6 @@ impl ZkBobCloud {
 
         let tx_parts = account.get_tx_parts(request.amount, self.relayer_fee, request.to).await?;
         
-        let mut send_queue = self.send_queue.write().await;
         let mut task = TransferTask{ request_id: request.id.clone(), parts: Vec::new() };
         let mut parts = Vec::new();
         for (i, tx_part) in tx_parts.into_iter().enumerate() {
@@ -113,6 +112,8 @@ impl ZkBobCloud {
         }
 
         self.db.write().await.save_task(task, &parts)?;
+
+        let mut send_queue = self.send_queue.write().await;
         for part in parts {
             send_queue.send(part.id).await?;
         }

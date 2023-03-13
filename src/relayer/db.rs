@@ -5,7 +5,6 @@ use crate::{errors::CloudError, Database};
 use super::cached::Transaction;
 
 pub struct Db {
-    db_path: String,
     db: Database,
 }
 
@@ -21,7 +20,6 @@ impl Db {
         .map_err(|err| CloudError::InternalError(err.to_string()))?;
 
         Ok(Db {
-            db_path: db_path.to_string(),
             db,
         })
     }

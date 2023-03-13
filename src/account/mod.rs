@@ -11,7 +11,7 @@ use libzkbob_rs::{
 };
 use tokio::sync::RwLock;
 use uuid::Uuid;
-use zkbob_utils_rs::contracts::pool::Pool;
+use zkbob_utils_rs::{contracts::pool::Pool, tracing};
 
 use crate::{errors::CloudError, Database, Fr, PoolParams, helpers::AsU64Amount, relayer::cached::CachedRelayerClient};
 
@@ -188,13 +188,29 @@ impl Account {
     }
 
     pub async fn history(&self, pool: &Pool) -> Result<Vec<HistoryTx>, CloudError> {
-        let memos = self.db.read().await.get_memos()?;
+        let memos = {
+            self.db.read().await.get_memos()?
+        };
 
         let mut last_account: Option<NativeAccount<Fr>> = None;
         let mut history = vec![];
         for memo in memos {
             let tx_hash = memo.tx_hash.clone().unwrap();
-            let info = get_web3_info(&tx_hash, pool).await?;
+            let info = {
+                let info = {
+                    self.db.read().await.get_web3(&tx_hash)
+                };
+                match info {
+                    Some(info) => info,
+                    None => {
+                        let info = get_web3_info(&tx_hash, pool).await?;
+                        if let Err(err) = self.db.write().await.save_web3(&tx_hash, &info) {
+                            tracing::warn!("failed to save web3 info for tx_hash: {}: {}", &tx_hash, err);
+                        }
+                        info
+                    }
+                }
+            };
             match info.tx_type {
                 Web3TxType::Deposit => {
                     let token_amount = info.token_amount.unwrap();
@@ -332,7 +348,7 @@ impl Account {
             let inner = self.inner.read().await;
             (inner.state.tree.next_index(), &inner.keys.eta.clone(), &inner.params.clone())
         };
-        let relayer_index = relayer.info().await?.delta_index;
+        let relayer_index = relayer.info().await?.optimistic_delta_index;
 
         let limit = (relayer_index - account_index) / (constants::OUT as u64 + 1);
         let txs = relayer.transactions(account_index, limit, true).await?;

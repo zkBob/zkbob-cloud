@@ -61,7 +61,7 @@ impl CachedRelayerClient {
         tracing::info!("cached: {}", cached.len());
 
         if limit == 0 {
-            return Ok(vec![]);
+            return Ok(cached);
         }
 
         let fetched = self

@@ -7,7 +7,7 @@ use crate::{errors::CloudError, cloud::{send_worker::get_part, types::TransferSt
 
 use super::{cloud::ZkBobCloud, types::TransferPart};
 
-const MAX_ATTEMPTS: u32 = 5;
+const MAX_ATTEMPTS: u32 = 10;
 
 pub(crate) async fn run_status_worker(cloud: Data<ZkBobCloud>) -> Result<(), CloudError> {
     tokio::task::spawn(async move {
@@ -18,28 +18,31 @@ pub(crate) async fn run_status_worker(cloud: Data<ZkBobCloud>) -> Result<(), Clo
             };
             match task {
                 Ok(Some((redis_id, id))) => {
-                    println!("status: {}", &id);
-                    let process_result = process_part(cloud.clone(), id.clone()).await;
-                    println!("status: {:?}", &process_result);
-                    if process_result.update.is_some() {
-                        match cloud.db.write().await.save_part(&process_result.update.unwrap()) {
-                            Ok(_) => {},
-                            Err(err) => {
-                                continue;
+                    let cloud = cloud.clone();
+                    thread::spawn(move || {
+                        let rt = tokio::runtime::Runtime::new().unwrap();
+                        rt.block_on(async {
+                            let process_result = process_part(cloud.clone(), id.clone()).await;
+                            if process_result.update.is_some() {
+                                if let Err(err) = cloud.db.write().await.save_part(&process_result.update.unwrap()) {
+                                    tracing::error!("[status task: {}] failed to save processed task in db: {}", &id, err);
+                                    return;
+                                }
                             }
-                        }
-                    }
-                    
-                    if process_result.delete {
-                        let mut status_queue = cloud.status_queue.write().await;
-                        status_queue.delete(&redis_id).await;
-                    }
+                            
+                            if process_result.delete {
+                                let mut status_queue = cloud.status_queue.write().await;
+                                if let Err(err) = status_queue.delete(&redis_id).await {
+                                    tracing::error!("[status task: {}] failed to delete task from queue: {}", &id, err);
+                                    return;
+                                }
+                            }
+                        })
+                    });
                 },
-                Ok(None) => {
-
-                },
+                Ok(None) => { },
                 Err(err) => {
-                    tracing::error!("{}", err.to_string());
+                    tracing::error!("failed to recieve task from status queue: {}", err.to_string());
                 }
             }
             thread::sleep(Duration::from_millis(500));
@@ -49,23 +52,21 @@ pub(crate) async fn run_status_worker(cloud: Data<ZkBobCloud>) -> Result<(), Clo
 }
 
 async fn process_part(cloud: Data<ZkBobCloud>, id: String) -> ProcessResult {
-    // 1. Check that task is relaying
-    let part = get_part(cloud.clone(), &id).await;
-    if let Err(err) = part {
-        return ProcessResult {
-            delete: true,
-            update: None,
+    tracing::info!("[status task: {}] processing...", &id);
+
+    let part = match get_part(cloud.clone(), &id).await {
+        Ok(part) => part,
+        Err(err) => {
+            tracing::error!("[status task: {}] cannot get task from db: {}, deleting task", &id, err);
+            return ProcessResult::delete_from_queue();
         }
-    }
-    let part = part.unwrap();
+    };
 
     match part.status.clone() {
-        TransferStatus::Relaying => {},
+        TransferStatus::Relaying | TransferStatus::Mining => {},
         status => {
-            return ProcessResult {
-                delete: true,
-                update: None,
-            }
+            tracing::warn!("[status task: {}] task has status {:?}, deleting task", &id, status);
+            return ProcessResult::delete_from_queue();
         }
     }
 
@@ -79,23 +80,27 @@ async fn process_part(cloud: Data<ZkBobCloud>, id: String) -> ProcessResult {
 
             match status {
                 TransferStatus::Done => {
-                    let part = TransferPart {
-                        status,
-                        tx_hash: response.tx_hash,
-                        ..part
-                    };
-                    ProcessResult {
-                        delete: true,
-                        update: Some(part)
-                    }
+                    tracing::info!("[status task: {}] processed successfully, tx_hash: {}", &id, &response.tx_hash.clone().unwrap());
+                    ProcessResult::success(part, response.tx_hash.unwrap())
+                }
+                TransferStatus::Mining => {
+                    tracing::info!("[status task: {}] sent to contract, tx_hash: {}", &id, &response.tx_hash.clone().unwrap());
+                    ProcessResult::update_status(part, TransferStatus::Mining, response.tx_hash.unwrap())
                 }
                 TransferStatus::Failed(err) => {
+                    tracing::warn!("[status task: {}] task was rejected by relayer: {}", &id, err);
                     ProcessResult::error_without_retry(part, err)
                 },
-                _ => ProcessResult::retry_later()
+                _ => {
+                    tracing::info!("[status task: {}] task is not finished yet, postpone task", &id);
+                    ProcessResult::retry_later()
+                }
             }
         },
-        Err(err) => ProcessResult::error_with_retry_attempts(part, err)
+        Err(err) => {
+            tracing::warn!("[status task: {}] failed to fetch status from relayer, retry attempt: {}", &id, part.attempt);
+            ProcessResult::error_with_retry_attempts(part, err)
+        }
     }
 }
 
@@ -107,6 +112,44 @@ struct ProcessResult {
 }
 
 impl ProcessResult {
+    fn success(part: TransferPart, tx_hash: String) -> ProcessResult {
+        let part = TransferPart {
+            status: TransferStatus::Done,
+            tx_hash: Some(tx_hash),
+            ..part
+        };
+        ProcessResult {
+            delete: true,
+            update: Some(part)
+        }
+    }
+
+    fn update_status(part: TransferPart, status: TransferStatus, tx_hash: String) -> ProcessResult {
+        let part = TransferPart {
+            status,
+            tx_hash: Some(tx_hash),
+            ..part
+        };
+        ProcessResult {
+            delete: false,
+            update: Some(part)
+        }
+    }
+
+    fn retry_later() -> ProcessResult {
+        return ProcessResult {
+            delete: false,
+            update: None,
+        };
+    }
+
+    fn delete_from_queue() -> ProcessResult {
+        return ProcessResult {
+            delete: true,
+            update: None,
+        };
+    }
+
     fn error_with_retry_attempts(part: TransferPart, err: CloudError) -> ProcessResult {
         if part.attempt >= MAX_ATTEMPTS {
             return ProcessResult::error_without_retry(part, err);
@@ -130,13 +173,6 @@ impl ProcessResult {
         return ProcessResult {
             delete: true,
             update: Some(part),
-        };
-    }
-
-    fn retry_later() -> ProcessResult {
-        return ProcessResult {
-            delete: false,
-            update: None,
         };
     }
 }

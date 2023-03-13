@@ -1,13 +1,11 @@
 use memo_parser::calldata::{transact::memo::TxType, CalldataContent, ParsedCalldata};
-use std::sync::Arc;
-use tokio::sync::RwLock;
+use serde::{Deserialize, Serialize};
 use web3::types::H256;
 use zkbob_utils_rs::contracts::pool::Pool;
 
 use crate::errors::CloudError;
 
-use super::db::Db;
-
+#[derive(Serialize, Deserialize)]
 pub enum Web3TxType {
     Deposit = 0,
     Transfer = 1,
@@ -16,6 +14,7 @@ pub enum Web3TxType {
     DirectDeposit = 4,
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct TxWeb3Info {
     pub tx_type: Web3TxType,
     pub timestamp: u64,

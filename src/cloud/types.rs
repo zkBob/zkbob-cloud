@@ -53,7 +53,6 @@ pub struct Transfer {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum TransferStatus {
     New,
-    Queued,
     Proving,
     Relaying,
     Mining,

@@ -6,7 +6,7 @@ use libzkbob_rs::{
 
 use crate::{errors::CloudError, Database, Fr, PoolParams};
 
-use super::tx_parser::DecMemo;
+use super::{tx_parser::DecMemo, web3::TxWeb3Info};
 
 pub(crate) struct Db {
     db_path: String,
@@ -99,6 +99,22 @@ impl Db {
         Ok(memos)
     }
 
+    pub fn save_web3(&mut self, tx_hash: &str, web3: &TxWeb3Info) -> Result<(), CloudError> {
+        let bytes = serde_json::to_vec(&web3).map_err(|err| CloudError::DataBaseWriteError(err.to_string()))?;
+        self.history
+            .write({
+                let mut tx = self.history.transaction();
+                tx.put_vec(HistoryDbColumn::Web3.into(), tx_hash.as_bytes(), bytes);
+                tx
+            })
+            .map_err(|err| CloudError::DataBaseWriteError(err.to_string()))
+    }
+
+    pub fn get_web3(&self, tx_hash: &str) -> Option<TxWeb3Info> {
+        let bytes = self.history.get(HistoryDbColumn::Web3.into(), tx_hash.as_bytes()).ok().flatten()?;
+        serde_json::from_slice(&bytes).map_err(|err| CloudError::DataBaseReadError(err.to_string())).ok()
+    }
+
     fn save_db(&mut self, key: &str, value: &[u8]) -> Result<(), CloudError> {
         self.db
             .write({
@@ -112,22 +128,6 @@ impl Db {
     fn get_db(&self, key: &str) -> Result<Option<Vec<u8>>, CloudError> {
         self.db
             .get(AccountDbColumn::General.into(), key.as_bytes())
-            .map_err(|err| CloudError::DataBaseReadError(err.to_string()))
-    }
-
-    fn save_history(&mut self, column: HistoryDbColumn, key: &[u8], value: &[u8]) -> Result<(), CloudError> {
-        self.db
-            .write({
-                let mut tx = self.db.transaction();
-                tx.put(column.into(), key, value);
-                tx
-            })
-            .map_err(|err| CloudError::DataBaseWriteError(err.to_string()))
-    }
-
-    fn get_history(&self, column: HistoryDbColumn, key: &[u8]) -> Result<Option<Vec<u8>>, CloudError> {
-        self.db
-            .get(column.into(), key)
             .map_err(|err| CloudError::DataBaseReadError(err.to_string()))
     }
 }
