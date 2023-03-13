@@ -7,13 +7,14 @@ use zkbob_utils_rs::tracing;
 
 use crate::errors::CloudError;
 
-use self::{types::{SignupRequest, SignupResponse, AccountInfoRequest, GenerateAddressResponse, TransferRequest, Transfer, TransferResponse}, cloud::ZkBobCloud};
+use self::{types::{SignupRequest, SignupResponse, AccountInfoRequest, GenerateAddressResponse, TransferRequest, Transfer, TransferResponse, TransferStatusRequest}, cloud::ZkBobCloud};
 
 pub mod cloud;
 pub mod types;
 mod db;
 mod queue;
 mod send_worker;
+mod status_worker;
 
 pub async fn signup(
     request: Json<SignupRequest>,
@@ -110,4 +111,12 @@ pub async fn transfer(
     }).await?;
 
     Ok(HttpResponse::Ok().json(TransferResponse{ request_id }))
+}
+
+pub async fn transfer_status(
+    request: Query<TransferStatusRequest>,
+    cloud: Data<ZkBobCloud>,
+) -> Result<HttpResponse, CloudError> {
+    let parts = cloud.transfer_status(&request.request_id).await?;
+    Ok(HttpResponse::Ok().json(parts))
 }

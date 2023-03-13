@@ -51,6 +51,12 @@ impl Db {
         self.db.write(tx).map_err(|err| CloudError::DataBaseWriteError(err.to_string()))
     }
 
+    pub fn get_task(&self, id: &str) -> Result<TransferTask, CloudError> {
+        let bytes = self.get(CloudDbColumn::Tasks, id)?
+            .ok_or(CloudError::InternalError("task not found".to_string()))?;
+        serde_json::from_slice(&bytes).map_err(|err| CloudError::DataBaseReadError(err.to_string()))
+    }
+
     pub fn save_part(&mut self, part: &TransferPart) -> Result<(), CloudError> {
         let bytes = serde_json::to_vec(&part).map_err(|err| CloudError::DataBaseWriteError(err.to_string()))?;
         self.save(CloudDbColumn::Tasks, &part.id, &bytes)

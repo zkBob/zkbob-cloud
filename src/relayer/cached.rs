@@ -2,7 +2,7 @@ use libzkbob_rs::libzeropool::fawkes_crypto::ff_uint::{Num, NumRepr, Uint};
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 use zkbob_utils_rs::{
-    relayer::{client::RelayerClient, types::{InfoResponse, TransactionRequest, TransactionResponse}},
+    relayer::{client::RelayerClient, types::{InfoResponse, TransactionRequest, TransactionResponse, JobResponse}},
     tracing,
 };
 
@@ -36,6 +36,10 @@ impl CachedRelayerClient {
 
     pub async fn info(&self) -> Result<InfoResponse, CloudError> {
         Ok(self.client.info().await?)
+    }
+
+    pub async fn job(&self, id: &str) -> Result<JobResponse, CloudError> {
+        Ok(self.client.job(id).await?)
     }
 
     pub async fn send_transactions(&self, request: Vec<TransactionRequest>) -> Result<TransactionResponse, CloudError> {

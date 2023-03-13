@@ -61,6 +61,44 @@ pub enum TransferStatus {
     Failed(CloudError),
 }
 
+impl TransferStatus {
+    pub fn from_relayer_response(status: String, failure_reason: Option<String>) -> Self {
+        match status.as_str() {
+            "waiting" => Self::Relaying,
+            "sent" => Self::Mining,
+            "completed" => Self::Done,
+            "reverted" => Self::Failed(CloudError::TaskRejectedByRelayer(
+                failure_reason.unwrap_or(Default::default()),
+            )),
+            "failed" => Self::Failed(CloudError::TaskRejectedByRelayer(
+                failure_reason.unwrap_or(Default::default()),
+            )),
+            _ => Self::Failed(CloudError::RelayerSendError),
+        }
+    }
+
+    pub fn is_final(&self) -> bool {
+        match self {
+            TransferStatus::Done | TransferStatus::Failed(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn status(&self) -> String {
+        match self {
+            Self::Failed(_) => "Failed".to_string(),
+            _ => format!("{:?}", self),
+        }
+    }
+
+    pub fn failure_reason(&self) -> Option<String> {
+        match self {
+            Self::Failed(err) => Some(err.to_string()),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct TransferPart {
     pub id: String,
@@ -73,10 +111,17 @@ pub struct TransferPart {
     pub job_id: Option<String>,
     pub tx_hash: Option<String>,
     pub depends_on: Option<String>,
+    pub attempt: u32,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct TransferTask {
     pub request_id: String,
     pub parts: Vec<String>
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TransferStatusRequest {
+    pub request_id: String,
 }

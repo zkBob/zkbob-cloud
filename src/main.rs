@@ -1,7 +1,7 @@
 use actix_cors::Cors;
 use actix_web::{web::{Data, JsonConfig, get, post}, App, middleware::Logger, HttpServer, HttpResponse};
 use libzkbob_rs::libzeropool::{fawkes_crypto::backend::bellman_groth16::Parameters, POOL_PARAMS};
-use zkbob_cloud::{Engine, config::Config, errors::CloudError, version, cloud::{cloud::ZkBobCloud, signup, short_info, generate_shielded_address, history, transfer}};
+use zkbob_cloud::{Engine, config::Config, errors::CloudError, version, cloud::{cloud::ZkBobCloud, signup, short_info, generate_shielded_address, history, transfer, transfer_status}};
 use zkbob_utils_rs::{telemetry::telemetry, contracts::pool::Pool, tracing};
 
 
@@ -55,6 +55,7 @@ async fn main() -> std::io::Result<()> {
             .route("/generateAddress", get().to(generate_shielded_address))
             .route("/history", get().to(history))
             .route("/transfer", post().to(transfer))
+            .route("/transactionStatus", get().to(transfer_status))
     })
     .bind((host, port))?
     .run()

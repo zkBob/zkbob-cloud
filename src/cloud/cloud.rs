@@ -8,7 +8,7 @@ use zkbob_utils_rs::{tracing, contracts::pool::Pool};
 
 use crate::{account::{Account, types::{AccountShortInfo, HistoryTx}}, config::Config, errors::CloudError, Fr, relayer::cached::CachedRelayerClient, cloud::types::{TransferTask, TransferPart, TransferStatus}, Engine};
 
-use super::{db::Db, types::{TransferRequest, TransferResponse, Transfer}, queue::Queue, send_worker::run_send_worker};
+use super::{db::Db, types::{TransferRequest, TransferResponse, Transfer}, queue::Queue, send_worker::run_send_worker, status_worker::run_status_worker};
 
 pub struct ZkBobCloud {
     pub(crate) config: Config,
@@ -20,8 +20,8 @@ pub struct ZkBobCloud {
     pub(crate) relayer: Arc<CachedRelayerClient>,
     pub(crate) pool: Pool,
 
-    pub(crate) send_queue: RwLock<Queue>,
-    pub(crate) status_queue: RwLock<Queue>,
+    pub(crate) send_queue: Arc<RwLock<Queue>>,
+    pub(crate) status_queue: Arc<RwLock<Queue>>,
 
     pub(crate) accounts: RwLock<HashMap<Uuid, Arc<Account>>>
 }
@@ -31,8 +31,8 @@ impl ZkBobCloud {
         let db = Db::new(&config.db_path)?;
         let relayer = CachedRelayerClient::new(&config.relayer_url, &config.db_path)?;
 
-        let send_queue = RwLock::new(Queue::new("send", &config.redis_url).await?);
-        let status_queue = RwLock::new(Queue::new("status", &config.redis_url).await?);
+        let send_queue = Arc::new(RwLock::new(Queue::new("send", &config.redis_url).await?));
+        let status_queue = Arc::new(RwLock::new(Queue::new("status", &config.redis_url).await?));
 
         let cloud = Data::new(Self {
             config,
@@ -43,11 +43,12 @@ impl ZkBobCloud {
             relayer: Arc::new(relayer),
             pool,
             send_queue,
-            status_queue,
+            status_queue: status_queue.clone(),
             accounts: RwLock::new(HashMap::new())
         });
 
-        run_send_worker(cloud.clone()).await?;
+        run_send_worker(cloud.clone(), status_queue).await?;
+        run_status_worker(cloud.clone()).await?;
 
         Ok(cloud)
     }
@@ -105,6 +106,7 @@ impl ZkBobCloud {
                 job_id: None,
                 tx_hash: None,
                 depends_on: (i > 0).then_some(format!("{}.{}", &request.id, i - 1)),
+                attempt: 0,
             };
             parts.push(part);
             task.parts.push(format!("{}.{}", &request.id, i));
@@ -112,10 +114,21 @@ impl ZkBobCloud {
 
         self.db.write().await.save_task(task, &parts)?;
         for part in parts {
-            send_queue.send(part).await?;
+            send_queue.send(part.id).await?;
         }
 
         Ok(request.id)
+    }
+
+    pub async fn transfer_status(&self, id: &str) -> Result<Vec<TransferPart>, CloudError> {
+        let db = self.db.read().await;
+        let transfer = db.get_task(id)?;
+        let mut parts = Vec::new();
+        for id in transfer.parts {
+            let part = db.get_part(&id)?;
+            parts.push(part);
+        }
+        Ok(parts)
     }
 
     pub fn validate_token(&self, bearer_token: &str) -> Result<(), CloudError> {
