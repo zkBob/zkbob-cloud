@@ -1,6 +1,7 @@
 use std::{thread, time::Duration};
 
 use actix_web::web::Data;
+use tokio::time;
 use zkbob_utils_rs::{tracing, relayer::types::JobResponse};
 
 use crate::{errors::CloudError, cloud::{send_worker::get_part, types::TransferStatus}};
@@ -45,7 +46,7 @@ pub(crate) async fn run_status_worker(cloud: Data<ZkBobCloud>) -> Result<(), Clo
                     tracing::error!("failed to recieve task from status queue: {}", err.to_string());
                 }
             }
-            thread::sleep(Duration::from_millis(500));
+            time::sleep(Duration::from_millis(500)).await;
         }
     });
     Ok(())

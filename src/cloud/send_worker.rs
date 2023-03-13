@@ -3,7 +3,7 @@ use std::{time::Duration, thread, str::FromStr, sync::Arc};
 use actix_web::web::Data;
 use libzkbob_rs::proof::prove_tx;
 use memo_parser::calldata::transact::memo::TxType;
-use tokio::sync::RwLock;
+use tokio::{sync::RwLock, time};
 use uuid::Uuid;
 use zkbob_utils_rs::{tracing, relayer::types::{Proof, TransactionRequest}};
 
@@ -57,7 +57,7 @@ pub(crate) async fn run_send_worker(cloud: Data<ZkBobCloud>, check_status_queue:
                     tracing::error!("failed to recieve task from send queue: {}", err.to_string());
                 }
             }
-            thread::sleep(Duration::from_millis(500));
+            time::sleep(Duration::from_millis(500)).await;
         }
     });
     Ok(())
