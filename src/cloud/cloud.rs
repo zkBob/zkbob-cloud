@@ -30,6 +30,7 @@ impl ZkBobCloud {
     pub async fn new(config: Config, pool: Pool, pool_id: Num<Fr>, params: Parameters<Engine>) -> Result<Data<Self>, CloudError> {
         let db = Db::new(&config.db_path)?;
         let relayer = CachedRelayerClient::new(&config.relayer_url, &config.db_path)?;
+        let relayer_fee = relayer.fee().await?;
 
         let send_queue = Arc::new(RwLock::new(Queue::new("send", &config.redis_url).await?));
         let status_queue = Arc::new(RwLock::new(Queue::new("status", &config.redis_url).await?));
@@ -39,7 +40,7 @@ impl ZkBobCloud {
             db: RwLock::new(db),
             pool_id,
             params,
-            relayer_fee: 100000000, // TODO: fetch from relayer
+            relayer_fee,
             relayer: Arc::new(relayer),
             pool,
             send_queue,

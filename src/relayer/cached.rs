@@ -38,6 +38,10 @@ impl CachedRelayerClient {
         Ok(self.client.info().await?)
     }
 
+    pub async fn fee(&self) -> Result<u64, CloudError> {
+        Ok(self.client.fee().await?)
+    }
+
     pub async fn job(&self, id: &str) -> Result<JobResponse, CloudError> {
         Ok(self.client.job(id).await?)
     }
