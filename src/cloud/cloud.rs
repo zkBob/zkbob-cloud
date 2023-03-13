@@ -8,7 +8,7 @@ use zkbob_utils_rs::{tracing, contracts::pool::Pool};
 
 use crate::{account::{Account, types::{AccountShortInfo, HistoryTx}}, config::Config, errors::CloudError, Fr, relayer::cached::CachedRelayerClient, cloud::types::{TransferTask, TransferPart, TransferStatus}, Engine};
 
-use super::{db::Db, types::Transfer, queue::Queue, send_worker::run_send_worker, status_worker::run_status_worker};
+use super::{db::Db, types::Transfer, queue::Queue, send_worker::run_send_worker, status_worker::run_status_worker, cleanup::AccountCleanup};
 
 pub struct ZkBobCloud {
     pub(crate) config: Config,
@@ -23,7 +23,7 @@ pub struct ZkBobCloud {
     pub(crate) send_queue: Arc<RwLock<Queue>>,
     pub(crate) status_queue: Arc<RwLock<Queue>>,
 
-    pub(crate) accounts: RwLock<HashMap<Uuid, Arc<Account>>>
+    pub(crate) accounts: Arc<RwLock<HashMap<Uuid, Arc<Account>>>>
 }
 
 impl ZkBobCloud {
@@ -44,7 +44,7 @@ impl ZkBobCloud {
             pool,
             send_queue,
             status_queue: status_queue.clone(),
-            accounts: RwLock::new(HashMap::new())
+            accounts: Arc::new(RwLock::new(HashMap::new()))
         });
 
         run_send_worker(cloud.clone(), status_queue).await?;
@@ -64,24 +64,21 @@ impl ZkBobCloud {
     }
 
     pub async fn account_info(&self, id: Uuid) -> Result<AccountShortInfo, CloudError> {
-        let account = self.get_account(id).await?;
+        let (account, _cleanup) = self.get_account(id).await?;
         account.sync(self.relayer.clone()).await?;
         let info = account.short_info(self.relayer_fee).await;
-        self.release_account(id).await;
         Ok(info)
     }
 
     pub async fn generate_address(&self, id: Uuid) -> Result<String, CloudError> {
-        let account = self.get_account(id).await?;
+        let (account, _cleanup) = self.get_account(id).await?;
         let address = account.generate_address().await;
-        self.release_account(id).await;
         Ok(address)
     }
 
     pub async fn history(&self, id: Uuid) -> Result<Vec<HistoryTx>, CloudError> {
-        let account = self.get_account(id).await?;
+        let (account, _cleanup) = self.get_account(id).await?;
         let history = account.history(&self.pool).await;
-        self.release_account(id).await;
         history
     }
 
@@ -94,7 +91,7 @@ impl ZkBobCloud {
             return Err(CloudError::DuplicateTransactionId);
         }
 
-        let account = self.get_account(request.account_id).await?;
+        let (account, _cleanup) = self.get_account(request.account_id).await?;
         account.sync(self.relayer.clone()).await?;
 
         let tx_parts = account.get_tx_parts(request.amount, self.relayer_fee, request.to).await?;
@@ -147,25 +144,17 @@ impl ZkBobCloud {
         Ok(())
     }
 
-    pub(crate) async fn get_account(&self, id: Uuid) -> Result<Arc<Account>, CloudError> {
+    pub(crate) async fn get_account(&self, id: Uuid) -> Result<(Arc<Account>, AccountCleanup), CloudError> {
         let db_path = self.db.read().await.get_account(id)?.ok_or(CloudError::AccountNotFound)?;
 
         let mut accounts = self.accounts.write().await;
         
         if accounts.contains_key(&id) {
-            return Ok(accounts.get(&id).unwrap().clone())
+            return Ok((accounts.get(&id).unwrap().clone(), AccountCleanup { id, accounts: self.accounts.clone() }))
         } 
 
         let account = Arc::new(Account::load(id, self.pool_id, &db_path)?);
         accounts.insert(id, account.clone());
-
-        Ok(account)
-    }
-
-    pub(crate) async fn release_account(&self, id: Uuid) {
-        let mut accounts = self.accounts.write().await;
-        if accounts.contains_key(&id) {
-            accounts.remove(&id);
-        } 
+        Ok((account, AccountCleanup { id, accounts: self.accounts.clone() }))
     }
 }

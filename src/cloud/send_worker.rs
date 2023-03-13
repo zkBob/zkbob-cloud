@@ -113,7 +113,8 @@ async fn process_part(cloud: Data<ZkBobCloud>, id: String) -> ProcessResult {
     };
 
     let tx = {
-        let account = match cloud.get_account(account_id).await {
+        
+        let (account, _cleanup) = match cloud.get_account(account_id).await {
             Ok(account) => account,
             Err(err) => {
                 tracing::warn!("[send task: {}] failed to get account, retry attempt: {}", &id, part.attempt);
@@ -127,8 +128,7 @@ async fn process_part(cloud: Data<ZkBobCloud>, id: String) -> ProcessResult {
                 tracing::warn!("[send task: {}] failed to create transfer, retry attempt: {}", &id, part.attempt);
                 return ProcessResult::error_with_retry_attempts(part, err);
             }
-        };
-        cloud.release_account(account_id).await;    
+        };  
         tx
     };
     
