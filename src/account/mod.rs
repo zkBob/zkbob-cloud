@@ -14,7 +14,7 @@ use uuid::Uuid;
 
 use crate::{errors::CloudError, Database, Fr, PoolParams, helpers::AsU64Amount, relayer::cached::CachedRelayerClient, web3::cached::{CachedWeb3Client, Web3TxType}};
 
-use self::{db::Db, types::{AccountShortInfo, HistoryTx, HistoryTxType}, tx_parser::StateUpdate};
+use self::{db::Db, types::{AccountInfo, HistoryTx, HistoryTxType}, tx_parser::StateUpdate};
 
 pub mod types;
 mod tx_parser;
@@ -78,22 +78,23 @@ impl Account {
             inner: RwLock::new(inner),
         })
     }
-
+    
     pub async fn next_index(&self) -> u64 {
         let inner = self.inner.read().await;
         inner.state.tree.next_index()
     }
 
-    pub async fn short_info(&self, fee: u64) -> AccountShortInfo {
+    pub async fn info(&self, fee: u64) -> AccountInfo {
         let balance = {
             self.inner.read().await.state.total_balance().as_u64_amount()
         };
 
-        AccountShortInfo {
+        AccountInfo {
             id: self.id.to_string(),
             description: self.description.clone(),
             balance,
             max_transfer_amount: self.max_transfer_amount(fee).await,
+            address: self.generate_address().await,
         }
     }
 

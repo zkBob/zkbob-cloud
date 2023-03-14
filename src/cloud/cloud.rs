@@ -6,9 +6,9 @@ use tokio::sync::RwLock;
 use uuid::Uuid;
 use zkbob_utils_rs::{tracing, contracts::pool::Pool};
 
-use crate::{account::{Account, types::{AccountShortInfo, HistoryTx}}, config::Config, errors::CloudError, Fr, relayer::cached::CachedRelayerClient, cloud::types::{TransferTask, TransferPart, TransferStatus}, Engine, web3::cached::CachedWeb3Client};
+use crate::{account::{Account, types::{AccountInfo, HistoryTx}}, config::Config, errors::CloudError, Fr, relayer::cached::CachedRelayerClient, cloud::{types::{TransferTask, TransferPart, TransferStatus}, db::AccountData}, Engine, web3::cached::CachedWeb3Client};
 
-use super::{db::Db, types::Transfer, queue::Queue, send_worker::run_send_worker, status_worker::run_status_worker, cleanup::AccountCleanup};
+use super::{db::Db, types::{Transfer, AccountShortInfo}, queue::Queue, send_worker::run_send_worker, status_worker::run_status_worker, cleanup::AccountCleanup};
 
 pub struct ZkBobCloud {
     pub(crate) config: Config,
@@ -59,17 +59,26 @@ impl ZkBobCloud {
     pub async fn new_account(&self, description: String, id: Option<Uuid>, sk: Option<Vec<u8>>) -> Result<Uuid, CloudError> {
         let id = id.unwrap_or(uuid::Uuid::new_v4());
         let db_path = self.db.read().await.account_db_path(id);
-        let account = Account::new(id, description, sk, self.pool_id, &db_path).await?;
+        let account = Account::new(id, description.clone(), sk, self.pool_id, &db_path).await?;
         let id = account.id;
-        self.db.write().await.save_account(id, &db_path)?;
+        self.db.write().await.save_account(id, &AccountData{db_path, description})?;
         tracing::info!("created a new account: {}", id);
         Ok(id)
     }
 
-    pub async fn account_info(&self, id: Uuid) -> Result<AccountShortInfo, CloudError> {
+    pub async fn list_accounts(&self) -> Result<Vec<AccountShortInfo>, CloudError> {
+        Ok(self.db.read().await.get_accounts()?.into_iter().map(|(id, data)| {
+            AccountShortInfo {
+                id: id.as_hyphenated().to_string(),
+                description: data.description,
+            }
+        }).collect())
+    }
+
+    pub async fn account_info(&self, id: Uuid) -> Result<AccountInfo, CloudError> {
         let (account, _cleanup) = self.get_account(id).await?;
         account.sync(self.relayer.clone()).await?;
-        let info = account.short_info(self.relayer_fee).await;
+        let info = account.info(self.relayer_fee).await;
         Ok(info)
     }
 
@@ -156,7 +165,7 @@ impl ZkBobCloud {
     }
 
     pub(crate) async fn get_account(&self, id: Uuid) -> Result<(Arc<Account>, AccountCleanup), CloudError> {
-        let db_path = self.db.read().await.get_account(id)?.ok_or(CloudError::AccountNotFound)?;
+        let data = self.db.read().await.get_account(id)?.ok_or(CloudError::AccountNotFound)?;
 
         let mut accounts = self.accounts.write().await;
         
@@ -164,7 +173,7 @@ impl ZkBobCloud {
             return Ok((accounts.get(&id).unwrap().clone(), AccountCleanup { id, accounts: self.accounts.clone() }))
         } 
 
-        let account = Arc::new(Account::load(id, self.pool_id, &db_path)?);
+        let account = Arc::new(Account::load(id, self.pool_id, &data.db_path)?);
         accounts.insert(id, account.clone());
         Ok((account, AccountCleanup { id, accounts: self.accounts.clone() }))
     }

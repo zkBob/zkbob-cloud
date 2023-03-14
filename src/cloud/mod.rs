@@ -51,7 +51,16 @@ pub async fn signup(
     }))
 }
 
-pub async fn short_info(
+pub async fn list_accounts(
+    bearer: BearerAuth,
+    cloud: Data<ZkBobCloud>,
+) -> Result<HttpResponse, CloudError> {
+    cloud.validate_token(bearer.token())?;
+    let accounts = cloud.list_accounts().await?;
+    Ok(HttpResponse::Ok().json(accounts))
+}
+
+pub async fn account_info(
     request: Query<AccountInfoRequest>,
     cloud: Data<ZkBobCloud>,
 ) -> Result<HttpResponse, CloudError> {
