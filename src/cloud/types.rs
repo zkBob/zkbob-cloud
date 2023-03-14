@@ -124,3 +124,17 @@ pub struct TransferTask {
 pub struct TransferStatusRequest {
     pub request_id: String,
 }
+
+#[derive(Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct CalculateFeeRequest {
+    pub account_id: String,
+    pub amount: u64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CalculateFeeResponse {
+    pub transaction_count: u64,
+    pub total_fee: u64,
+}

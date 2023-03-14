@@ -104,7 +104,7 @@ impl Account {
         &self,
         total_amount: u64,
         fee: u64,
-        to: String,
+        to: &str,
     ) -> Result<Vec<(Option<String>, Num<Fr>)>, CloudError> {
         let account = self.inner.read().await;
         let amount = Num::from_uint(NumRepr::from(total_amount)).unwrap();
@@ -114,7 +114,7 @@ impl Account {
         let mut parts = vec![];
 
         if account_balance.to_uint() >= (amount + fee).to_uint() {
-            parts.push((Some(to), amount));
+            parts.push((Some(to.to_string()), amount));
             return Ok(parts);
         }
 
@@ -127,7 +127,7 @@ impl Account {
             }
 
             if (note_balance + account_balance).to_uint() >= (amount + fee).to_uint() {
-                parts.push((Some(to), amount));
+                parts.push((Some(to.to_string()), amount));
                 balance_is_sufficient = true;
                 break;
             } else {

@@ -87,6 +87,12 @@ impl ZkBobCloud {
         history
     }
 
+    pub async fn calculate_fee(&self, id: Uuid, amount: u64) -> Result<(u64, u64), CloudError> {
+        let (account, _cleanup) = self.get_account(id).await?;
+        let parts = account.get_tx_parts(amount, self.relayer_fee, "dummy").await?;
+        Ok((parts.len() as u64, parts.len() as u64 * self.relayer_fee))
+    }
+
     pub async fn transfer(&self, request: Transfer) -> Result<String, CloudError> {
         if request.id.contains(".") {
             return Err(CloudError::InvalidTransactionId);
@@ -99,7 +105,7 @@ impl ZkBobCloud {
         let (account, _cleanup) = self.get_account(request.account_id).await?;
         account.sync(self.relayer.clone()).await?;
 
-        let tx_parts = account.get_tx_parts(request.amount, self.relayer_fee, request.to).await?;
+        let tx_parts = account.get_tx_parts(request.amount, self.relayer_fee, &request.to).await?;
         
         let mut task = TransferTask{ request_id: request.id.clone(), parts: Vec::new() };
         let mut parts = Vec::new();
