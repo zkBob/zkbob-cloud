@@ -52,9 +52,13 @@ pub(crate) async fn run_send_worker(cloud: Data<ZkBobCloud>, check_status_queue:
                         })
                     });
                 },
-                Ok(None) => { },
-                Err(err) => {
-                    tracing::error!("failed to recieve task from send queue: {}", err.to_string());
+                Ok(None) => {},
+                Err(_) => {
+                    let mut send_queue = cloud.send_queue.write().await;
+                    match send_queue.reconnect().await {
+                        Ok(_) => tracing::info!("connection to redis reestablished"),
+                        Err(_) => {}
+                    }
                 }
             }
             time::sleep(Duration::from_millis(500)).await;
