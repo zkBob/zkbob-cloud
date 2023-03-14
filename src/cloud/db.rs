@@ -1,114 +1,94 @@
-use kvdb_rocksdb::DatabaseConfig;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+use zkbob_utils_rs::tracing;
 
-use crate::{errors::CloudError, Database};
+use crate::{errors::CloudError, helpers::db::KeyValueDb};
 
-use super::types::{TransferTask, TransferPart};
+use super::types::{TransferPart, TransferTask};
 
 pub(crate) struct Db {
     db_path: String,
-    db: Database,
+    db: KeyValueDb,
 }
 
 impl Db {
     pub fn new(db_path: &str) -> Result<Self, CloudError> {
-        let db = Database::open(
-            &DatabaseConfig {
-                columns: CloudDbColumn::count(),
-                ..Default::default()
-            },
-            &format!("{}/cloud", db_path),
-        )
-        .map_err(|err| CloudError::InternalError(err.to_string()))?;
-
-        Ok(Db { db_path: db_path.to_string(), db })
-    }
-
-    pub fn save_account(&mut self, id: Uuid, data: &AccountData) -> Result<(), CloudError> {
-        let bytes = serde_json::to_vec(data).map_err(|err| CloudError::DataBaseReadError(err.to_string()))?;
-        self.save(CloudDbColumn::Accounts, &id.as_bytes()[..], &bytes)
-    }
-
-    pub fn get_account(&self, id: Uuid) -> Result<Option<AccountData>, CloudError> {
-        match self.get(CloudDbColumn::Accounts, &id.as_bytes()[..])? {
-            Some(bytes) => {
-                serde_json::from_slice(&bytes).map_err(|err| CloudError::DataBaseReadError(err.to_string()))
-            },
-            None => Ok(None)
-        }
-    }
-
-    pub fn get_accounts(&self) -> Result<Vec<(Uuid, AccountData)>, CloudError> {
-        let mut result = Vec::new();
-        for (id, data) in self.db.iter(CloudDbColumn::Accounts.into()) {
-            let id = Uuid::from_slice(&id)
-                .map_err(|err| CloudError::DataBaseReadError(err.to_string()))?;
-            let data = serde_json::from_slice(&data).map_err(|err| CloudError::DataBaseReadError(err.to_string()))?;
-            result.push((id, data));
-        }
-        Ok(result)
+        Ok(Db {
+            db_path: db_path.to_string(),
+            db: KeyValueDb::new(&format!("{}/cloud", db_path), CloudDbColumn::count())?,
+        })
     }
 
     pub fn account_db_path(&self, id: Uuid) -> String {
         format!("{}/accounts_data/{}", self.db_path, id.as_hyphenated())
     }
 
-    pub fn save_task(&mut self, task: TransferTask, parts: &Vec<TransferPart>) -> Result<(), CloudError> {
-        let mut tx = self.db.transaction();
+    pub fn save_account(&mut self, id: Uuid, data: &AccountData) -> Result<(), CloudError> {
+        self.db
+            .save(CloudDbColumn::Accounts.into(), id.as_bytes(), data)
+    }
 
-        let task_bytes = serde_json::to_vec(&task).map_err(|err| CloudError::DataBaseWriteError(err.to_string()))?;
-        tx.put_vec(CloudDbColumn::Tasks.into(), task.request_id.as_bytes(), task_bytes);
+    pub fn get_account(&self, id: Uuid) -> Result<Option<AccountData>, CloudError> {
+        self.db.get(CloudDbColumn::Accounts.into(), id.as_bytes())
+    }
 
-        for part in parts {
-            let task_part_bytes = serde_json::to_vec(&part).map_err(|err| CloudError::DataBaseWriteError(err.to_string()))?;
-            tx.put_vec(CloudDbColumn::Tasks.into(), part.id.as_bytes(), task_part_bytes);
+    pub fn get_accounts(&self) -> Result<Vec<(Uuid, AccountData)>, CloudError> {
+        let kv = self.db.get_all_with_keys(CloudDbColumn::Accounts.into())?;
+        let mut accounts = Vec::new();
+        for (id, data) in kv {
+            let id = Uuid::from_slice(&id).map_err(|err| {
+                tracing::error!("failed to parse account id: {:?}: {:?}", id, err);
+                CloudError::DataBaseReadError(format!("failed to parse account id"))
+            })?;
+            accounts.push((id, data));
         }
+        Ok(accounts)
+    }
 
-        self.db.write(tx).map_err(|err| CloudError::DataBaseWriteError(err.to_string()))
+    pub fn save_task(
+        &mut self,
+        task: &TransferTask,
+        parts: Vec<TransferPart>,
+    ) -> Result<(), CloudError> {
+        self.db.save(
+            CloudDbColumn::Tasks.into(),
+            task.request_id.as_bytes(),
+            task,
+        )?;
+        let kv = parts
+            .into_iter()
+            .map(|part| (part.id.as_bytes().to_vec(), part))
+            .collect();
+        self.db.save_all(CloudDbColumn::Tasks.into(), kv)
     }
 
     pub fn get_task(&self, id: &str) -> Result<TransferTask, CloudError> {
-        let bytes = self.get(CloudDbColumn::Tasks, id.as_bytes())?
-            .ok_or(CloudError::InternalError("task not found".to_string()))?;
-        serde_json::from_slice(&bytes).map_err(|err| CloudError::DataBaseReadError(err.to_string()))
+        self.db
+            .get(CloudDbColumn::Tasks.into(), id.as_bytes())?
+            .ok_or(CloudError::InternalError(format!("task not found in db")))
     }
 
     pub fn task_exists(&self, id: &str) -> Result<bool, CloudError> {
-        Ok(self.get(CloudDbColumn::Tasks, id.as_bytes())?.is_some())
+        self.db.exists(CloudDbColumn::Tasks.into(), id.as_bytes())
     }
 
     pub fn save_part(&mut self, part: &TransferPart) -> Result<(), CloudError> {
-        let bytes = serde_json::to_vec(&part).map_err(|err| CloudError::DataBaseWriteError(err.to_string()))?;
-        self.save(CloudDbColumn::Tasks, &part.id.as_bytes(), &bytes)
+        self.db
+            .save(CloudDbColumn::Tasks.into(), &part.id.as_bytes(), part)
     }
 
     pub fn get_part(&self, id: &str) -> Result<TransferPart, CloudError> {
-        let bytes = self.get(CloudDbColumn::Tasks, id.as_bytes())?
-            .ok_or(CloudError::InternalError("task not found".to_string()))?;
-        serde_json::from_slice(&bytes).map_err(|err| CloudError::DataBaseReadError(err.to_string()))
-    }
-
-    fn save(&mut self, column: CloudDbColumn, key: &[u8], value: &[u8]) -> Result<(), CloudError> {
         self.db
-            .write({
-                let mut tx = self.db.transaction();
-                tx.put(column.into(), key, value);
-                tx
-            })
-            .map_err(|err| CloudError::DataBaseWriteError(err.to_string()))
-    }
-
-    fn get(&self, column: CloudDbColumn, key: &[u8]) -> Result<Option<Vec<u8>>, CloudError> {
-        self.db
-            .get(column.into(), key)
-            .map_err(|err| CloudError::DataBaseReadError(err.to_string()))
+            .get(CloudDbColumn::Tasks.into(), id.as_bytes())?
+            .ok_or(CloudError::InternalError(format!(
+                "task part not found in db"
+            )))
     }
 }
 
 pub enum CloudDbColumn {
     Accounts,
-    Tasks
+    Tasks,
 }
 
 impl CloudDbColumn {
@@ -123,7 +103,7 @@ impl Into<u32> for CloudDbColumn {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct AccountData {
     pub description: String,
     pub db_path: String,

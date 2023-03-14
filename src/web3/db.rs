@@ -1,44 +1,27 @@
-use kvdb_rocksdb::DatabaseConfig;
-
-use crate::{Database, errors::CloudError};
-
 use super::cached::TxWeb3Info;
-
+use crate::{errors::CloudError, helpers::db::KeyValueDb};
 
 pub struct Db {
-    db: Database,
+    db: KeyValueDb,
 }
 
 impl Db {
     pub fn new(db_path: &str) -> Result<Self, CloudError> {
-        let db = Database::open(
-            &DatabaseConfig {
-                columns: CacheDbCloumn::count(),
-                ..Default::default()
-            },
-            &format!("{}/web3_cache", db_path),
-        )
-        .map_err(|err| CloudError::InternalError(err.to_string()))?;
-
         Ok(Db {
-            db,
+            db: KeyValueDb::new(&format!("{}/web3_cache", db_path), CacheDbCloumn::count())?,
         })
     }
 
     pub fn save_web3(&mut self, tx_hash: &str, web3: &TxWeb3Info) -> Result<(), CloudError> {
-        let bytes = serde_json::to_vec(&web3).map_err(|err| CloudError::DataBaseWriteError(err.to_string()))?;
         self.db
-            .write({
-                let mut tx = self.db.transaction();
-                tx.put_vec(CacheDbCloumn::Web3.into(), tx_hash.as_bytes(), bytes);
-                tx
-            })
-            .map_err(|err| CloudError::DataBaseWriteError(err.to_string()))
+            .save(CacheDbCloumn::Web3.into(), tx_hash.as_bytes(), web3)
     }
 
     pub fn get_web3(&self, tx_hash: &str) -> Option<TxWeb3Info> {
-        let bytes = self.db.get(CacheDbCloumn::Web3.into(), tx_hash.as_bytes()).ok().flatten()?;
-        serde_json::from_slice(&bytes).map_err(|err| CloudError::DataBaseReadError(err.to_string())).ok()
+        self.db
+            .get(CacheDbCloumn::Web3.into(), tx_hash.as_bytes())
+            .ok()
+            .flatten()
     }
 }
 

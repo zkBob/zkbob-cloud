@@ -141,7 +141,7 @@ impl ZkBobCloud {
             task.parts.push(format!("{}.{}", &request.id, i));
         }
 
-        self.db.write().await.save_task(task, &parts)?;
+        self.db.write().await.save_task(&task, parts.clone())?;
 
         let mut send_queue = self.send_queue.write().await;
         for part in parts {

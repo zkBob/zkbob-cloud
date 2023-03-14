@@ -8,7 +8,7 @@ use crate::errors::CloudError;
 
 use super::db::Db;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub enum Web3TxType {
     Deposit = 0,
     Transfer = 1,
@@ -17,7 +17,7 @@ pub enum Web3TxType {
     DirectDeposit = 4,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct TxWeb3Info {
     pub tx_type: Web3TxType,
     pub timestamp: u64,

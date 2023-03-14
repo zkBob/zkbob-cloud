@@ -10,7 +10,7 @@ use crate::{errors::CloudError, Fr};
 
 use super::db::Db;
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Transaction {
     pub index: u64,
     pub memo: Vec<u8>,

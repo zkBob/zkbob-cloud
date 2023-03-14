@@ -1,57 +1,41 @@
-use kvdb_rocksdb::DatabaseConfig;
+use libzkbob_rs::libzeropool::constants;
 
-use crate::{errors::CloudError, Database};
+use crate::{errors::CloudError, helpers::db::KeyValueDb};
 
 use super::cached::Transaction;
 
 pub struct Db {
-    db: Database,
+    db: KeyValueDb,
 }
 
 impl Db {
     pub fn new(db_path: &str) -> Result<Self, CloudError> {
-        let db = Database::open(
-            &DatabaseConfig {
-                columns: CacheDbColumn::count(),
-                ..Default::default()
-            },
-            &format!("{}/relayer_cache", db_path),
-        )
-        .map_err(|err| CloudError::InternalError(err.to_string()))?;
-
         Ok(Db {
-            db,
+            db: KeyValueDb::new(
+                &format!("{}/relayer_cache", db_path),
+                CacheDbColumn::count(),
+            )?,
         })
     }
 
     pub fn save_txs(&mut self, txs: Vec<Transaction>) -> Result<(), CloudError> {
-        let mut db_tx = self.db.transaction();
-        txs.iter().for_each(|tx| {
-            db_tx.put_vec(
-                CacheDbColumn::Transactions.into(),
-                &tx.index.to_be_bytes(),
-                serde_json::to_vec(tx).unwrap(),
-            )
-        });
-        self.db
-            .write(db_tx)
-            .map_err(|err| CloudError::DataBaseWriteError(err.to_string()))
+        let kv = txs
+            .into_iter()
+            .map(|tx| (tx.index.to_be_bytes().to_vec(), tx))
+            .collect();
+        self.db.save_all(CacheDbColumn::Transactions.into(), kv)
     }
 
     pub fn get_txs(&self, offset: u64, limit: u64) -> Vec<Transaction> {
         let mut result = Vec::new();
-        for index in (offset..limit * 128 + offset).step_by(128) {
+        for index in
+            (offset..limit * (constants::OUT as u64 + 1) + offset).step_by(constants::OUT + 1)
+        {
             match self
                 .db
                 .get(CacheDbColumn::Transactions.into(), &index.to_be_bytes())
             {
-                Ok(Some(tx)) => {
-                    let tx = serde_json::from_slice::<Transaction>(&tx);
-                    match tx {
-                        Ok(tx) => result.push(tx),
-                        Err(_) => break,
-                    }
-                }
+                Ok(Some(tx)) => result.push(tx),
                 _ => break,
             }
         }

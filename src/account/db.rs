@@ -1,118 +1,84 @@
-use kvdb_rocksdb::DatabaseConfig;
 use libzkbob_rs::{
     client::state::Transaction, libzeropool::POOL_PARAMS, merkle::MerkleTree,
     sparse_array::SparseArray,
 };
+use zkbob_utils_rs::tracing;
 
-use crate::{errors::CloudError, Database, Fr, PoolParams};
+use crate::{errors::CloudError, helpers::db::KeyValueDb, Database, Fr, PoolParams};
 
 use super::tx_parser::DecMemo;
 
 pub(crate) struct Db {
     db_path: String,
 
-    db: Database,
-    history: Database,
+    db: KeyValueDb,
+    history: KeyValueDb,
 }
 
 impl Db {
     pub fn new(db_path: &str) -> Result<Self, CloudError> {
-        let db = Database::open(
-            &DatabaseConfig {
-                columns: AccountDbColumn::count(),
-                ..Default::default()
-            },
-            &format!("{}/{}", db_path, "account"),
-        )
-        .map_err(|err| CloudError::InternalError(err.to_string()))?;
-
-        let history = Database::open(
-            &DatabaseConfig {
-                columns: HistoryDbColumn::count(),
-                ..Default::default()
-            },
-            &format!("{}/{}", db_path, "history"),
-        )
-        .map_err(|err| CloudError::InternalError(err.to_string()))?;
-
         Ok(Db {
             db_path: db_path.to_string(),
-            db,
-            history,
+            db: KeyValueDb::new(
+                &format!("{}/{}", db_path, "account"),
+                AccountDbColumn::count(),
+            )?,
+            history: KeyValueDb::new(
+                &format!("{}/{}", db_path, "history"),
+                HistoryDbColumn::count(),
+            )?,
+        })
+    }
+
+    pub fn tree(&self) -> Result<MerkleTree<Database, PoolParams>, CloudError> {
+        let path = format!("{}/{}", self.db_path, "tree");
+        MerkleTree::new_native(Default::default(), &path, POOL_PARAMS.clone()).map_err(|err| {
+            tracing::error!("failed to init MerkleTree [{}]: {:?}", path, err);
+            CloudError::InternalError(format!("failed to init MerkleTree"))
+        })
+    }
+
+    pub fn txs(&self) -> Result<SparseArray<Database, Transaction<Fr>>, CloudError> {
+        let path = format!("{}/{}", self.db_path, "txs");
+        SparseArray::new_native(&Default::default(), &path).map_err(|err| {
+            tracing::error!("failed to init SparceArray [{}]: {:?}", path, err);
+            CloudError::InternalError(format!("failed to init SparseArray"))
         })
     }
 
     pub fn save_sk(&mut self, sk: &[u8]) -> Result<(), CloudError> {
-        self.save_db("sk", sk)
+        self.db
+            .save_raw(AccountDbColumn::General.into(), "sk".as_bytes(), sk)
     }
 
     pub fn get_sk(&self) -> Result<Option<Vec<u8>>, CloudError> {
-        self.get_db("sk")
+        self.db
+            .get_raw(AccountDbColumn::General.into(), "sk".as_bytes())
     }
 
     pub fn save_description(&mut self, description: &str) -> Result<(), CloudError> {
-        self.save_db("description", description.as_bytes())
+        self.db.save_string(
+            AccountDbColumn::General.into(),
+            "description".as_bytes(),
+            description,
+        )
     }
 
     pub fn get_description(&self) -> Result<Option<String>, CloudError> {
-        self.get_db("description")
-            .map(|opt| opt.map(|bytes| String::from_utf8(bytes).unwrap()))
-    }
-
-    pub fn tree(&self) -> Result<MerkleTree<Database, PoolParams>, CloudError> {
-        MerkleTree::new_native(
-            Default::default(),
-            &format!("{}/{}", self.db_path, "tree"),
-            POOL_PARAMS.clone(),
-        )
-        .map_err(|err| CloudError::InternalError(err.to_string()))
-    }
-
-    pub fn txs(&self) -> Result<SparseArray<Database, Transaction<Fr>>, CloudError> {
-        SparseArray::new_native(
-            &Default::default(),
-            &format!("{}/{}", self.db_path, "txs"),
-        )
-        .map_err(|err| CloudError::InternalError(err.to_string()))
+        self.db
+            .get_string(AccountDbColumn::General.into(), "description".as_bytes())
     }
 
     pub fn save_memos(&mut self, memos: Vec<DecMemo>) -> Result<(), CloudError> {
-        self.history.write({
-            let mut tx = self.history.transaction();
-            for memo in memos {
-                let key = &memo.index.to_be_bytes();
-                let memo = serde_json::to_vec(&memo)
-                    .map_err(|err| CloudError::InternalError(err.to_string()))?;
-                tx.put_vec(HistoryDbColumn::Memo.into(), key, memo);
-            }
-            tx
-        }).map_err(|err| CloudError::DataBaseWriteError(err.to_string()))
+        let kv = memos
+            .into_iter()
+            .map(|memo| (memo.index.to_be_bytes().to_vec(), memo))
+            .collect();
+        self.history.save_all(HistoryDbColumn::Memo.into(), kv)
     }
 
     pub fn get_memos(&self) -> Result<Vec<DecMemo>, CloudError> {
-        let mut memos = vec![];
-        for (_, v) in self.history.iter(HistoryDbColumn::Memo.into()) {
-            let memo: DecMemo = serde_json::from_slice(&v)
-                .map_err(|err| CloudError::DataBaseReadError(err.to_string()))?;
-            memos.push(memo);
-        }
-        Ok(memos)
-    }
-
-    fn save_db(&mut self, key: &str, value: &[u8]) -> Result<(), CloudError> {
-        self.db
-            .write({
-                let mut tx = self.db.transaction();
-                tx.put(AccountDbColumn::General.into(), key.as_bytes(), value);
-                tx
-            })
-            .map_err(|err| CloudError::DataBaseWriteError(err.to_string()))
-    }
-
-    fn get_db(&self, key: &str) -> Result<Option<Vec<u8>>, CloudError> {
-        self.db
-            .get(AccountDbColumn::General.into(), key.as_bytes())
-            .map_err(|err| CloudError::DataBaseReadError(err.to_string()))
+        self.history.get_all(HistoryDbColumn::Memo.into())
     }
 }
 
