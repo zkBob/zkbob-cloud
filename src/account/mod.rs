@@ -3,7 +3,7 @@ use std::{sync::Arc, panic::{self, AssertUnwindSafe}};
 use libzkbob_rs::{
     client::{state::State, UserAccount, TxOutput, TokenAmount, TxType, TransactionData, StateFragment},
     libzeropool::{
-        fawkes_crypto::{ff_uint::{Num, NumRepr}, rand::Rng},
+        fawkes_crypto::{ff_uint::{Num, NumRepr}, rand::Rng, BorshSerialize},
         POOL_PARAMS, constants,
         native::account::Account as NativeAccount,
     },
@@ -23,7 +23,6 @@ mod db;
 pub struct Account {
     pub id: Uuid,
     pub description: String,
-    pub(crate) sk: Vec<u8>,
 
     db: RwLock<Db>,
     inner: RwLock<UserAccount<Database, PoolParams>>,
@@ -52,7 +51,6 @@ impl Account {
         Ok(Self {
             id,
             description,
-            sk: sk.to_vec(),
             db: RwLock::new(db),
             inner: RwLock::new(inner),
         })
@@ -73,10 +71,17 @@ impl Account {
         Ok(Self {
             id,
             description,
-            sk,
             db: RwLock::new(db),
             inner: RwLock::new(inner),
         })
+    }
+
+    pub async fn export_key(&self) -> Result<String, CloudError> {
+        let inner = self.inner.read().await;
+        let sk_bytes = inner.keys.sk.try_to_vec().map_err(|e| {
+            CloudError::InternalError(format!("failed to serialize private key {:#?}", e))
+        })?;
+        Ok(hex::encode(sk_bytes))
     }
     
     pub async fn next_index(&self) -> u64 {

@@ -145,3 +145,9 @@ pub struct AccountShortInfo {
     pub id: String,
     pub description: String,
 }
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportKeyResponse {
+    pub sk: String,
+}

@@ -102,6 +102,11 @@ impl ZkBobCloud {
         Ok((parts.len() as u64, parts.len() as u64 * self.relayer_fee))
     }
 
+    pub async fn export_key(&self, id: Uuid) -> Result<String, CloudError> {
+        let (account, _cleanup) = self.get_account(id).await?;
+        account.export_key().await
+    }
+
     pub async fn transfer(&self, request: Transfer) -> Result<String, CloudError> {
         if request.id.contains(".") {
             return Err(CloudError::InvalidTransactionId);

@@ -7,7 +7,7 @@ use zkbob_utils_rs::tracing;
 
 use crate::errors::CloudError;
 
-use self::{types::{SignupRequest, SignupResponse, AccountInfoRequest, GenerateAddressResponse, TransferRequest, Transfer, TransferResponse, TransferStatusRequest, CalculateFeeRequest, CalculateFeeResponse}, cloud::ZkBobCloud};
+use self::{types::{SignupRequest, SignupResponse, AccountInfoRequest, GenerateAddressResponse, TransferRequest, Transfer, TransferResponse, TransferStatusRequest, CalculateFeeRequest, CalculateFeeResponse, ExportKeyResponse}, cloud::ZkBobCloud};
 
 pub mod cloud;
 pub mod types;
@@ -120,6 +120,17 @@ pub async fn calculate_fee(
     let account_id = parse_account_id(&request.account_id)?;
     let (transaction_count, total_fee) = cloud.calculate_fee(account_id, request.amount).await?;
     Ok(HttpResponse::Ok().json(CalculateFeeResponse{transaction_count, total_fee}))
+}
+
+pub async fn export_key(
+    request: Query<AccountInfoRequest>,
+    cloud: Data<ZkBobCloud>,
+    bearer: BearerAuth,
+) -> Result<HttpResponse, CloudError> {
+    cloud.validate_token(bearer.token())?;
+    let account_id = parse_account_id(&request.id)?;
+    let sk = cloud.export_key(account_id).await?;
+    Ok(HttpResponse::Ok().json(ExportKeyResponse { sk }))
 }
 
 fn parse_account_id(account_id: &str) -> Result<Uuid, CloudError> {
