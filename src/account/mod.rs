@@ -85,13 +85,15 @@ impl Account {
     }
 
     pub async fn short_info(&self, fee: u64) -> AccountShortInfo {
-        let inner = self.inner.read().await;
+        let balance = {
+            self.inner.read().await.state.total_balance().as_u64_amount()
+        };
 
         AccountShortInfo {
             id: self.id.to_string(),
             description: self.description.clone(),
-            balance: inner.state.total_balance().as_u64_amount(),
-            max_transfer_amount: 0, // TODO: fill it
+            balance,
+            max_transfer_amount: self.max_transfer_amount(fee).await,
         }
     }
 
@@ -325,6 +327,42 @@ impl Account {
             }
         }
         Ok(history)
+    }
+
+    pub async fn max_transfer_amount(
+        &self,
+        fee: u64,
+    ) -> u64 {
+        let fee = Num::from_uint(NumRepr::from(fee)).unwrap();
+
+        let (mut account_balance, notes) = {
+            let account = self.inner.read().await;
+            (account.state.account_balance(), account.state.get_usable_notes())
+        };
+        
+        let mut max_amount = if account_balance.to_uint() > fee.to_uint() {
+            account_balance - fee
+        } else {
+            Num::ZERO
+        };
+
+        for notes in notes.chunks(3) {
+            let mut note_balance = Num::ZERO;
+            for (_, note) in notes {
+                note_balance += note.b.as_num();
+            }
+
+            if (account_balance + note_balance).to_uint() < fee.to_uint() {
+                break;
+            }
+
+            account_balance += note_balance - fee;
+            if account_balance.to_uint() > max_amount.to_uint() {
+                max_amount = account_balance;
+            }
+        }
+
+        max_amount.as_u64_amount()
     }
 
     async fn get_optimistic_state(&self, relayer: Arc<CachedRelayerClient>) -> Result<StateFragment<Fr>, CloudError> {
