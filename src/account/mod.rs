@@ -11,16 +11,14 @@ use libzkbob_rs::{
 };
 use tokio::sync::RwLock;
 use uuid::Uuid;
-use zkbob_utils_rs::{contracts::pool::Pool, tracing};
 
-use crate::{errors::CloudError, Database, Fr, PoolParams, helpers::AsU64Amount, relayer::cached::CachedRelayerClient};
+use crate::{errors::CloudError, Database, Fr, PoolParams, helpers::AsU64Amount, relayer::cached::CachedRelayerClient, web3::cached::{CachedWeb3Client, Web3TxType}};
 
-use self::{db::Db, types::{AccountShortInfo, HistoryTx, HistoryTxType}, tx_parser::StateUpdate, web3::{get_web3_info, Web3TxType}};
+use self::{db::Db, types::{AccountShortInfo, HistoryTx, HistoryTxType}, tx_parser::StateUpdate};
 
 pub mod types;
 mod tx_parser;
 mod db;
-mod web3;
 
 pub struct Account {
     pub id: Uuid,
@@ -187,7 +185,7 @@ impl Account {
         Ok(tx)
     }
 
-    pub async fn history(&self, pool: &Pool) -> Result<Vec<HistoryTx>, CloudError> {
+    pub async fn history(&self, web3: Arc<CachedWeb3Client>) -> Result<Vec<HistoryTx>, CloudError> {
         let memos = {
             self.db.read().await.get_memos()?
         };
@@ -196,21 +194,7 @@ impl Account {
         let mut history = vec![];
         for memo in memos {
             let tx_hash = memo.tx_hash.clone().unwrap();
-            let info = {
-                let info = {
-                    self.db.read().await.get_web3(&tx_hash)
-                };
-                match info {
-                    Some(info) => info,
-                    None => {
-                        let info = get_web3_info(&tx_hash, pool).await?;
-                        if let Err(err) = self.db.write().await.save_web3(&tx_hash, &info) {
-                            tracing::warn!("failed to save web3 info for tx_hash: {}: {}", &tx_hash, err);
-                        }
-                        info
-                    }
-                }
-            };
+            let info = web3.get_web3_info(&tx_hash).await?;
             match info.tx_type {
                 Web3TxType::Deposit => {
                     let token_amount = info.token_amount.unwrap();

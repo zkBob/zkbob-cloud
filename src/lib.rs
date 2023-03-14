@@ -7,6 +7,7 @@ pub mod cloud;
 pub mod account;
 pub mod helpers;
 pub mod relayer;
+pub mod web3;
 
 pub type PoolParams = PoolBN256;
 pub type Engine = Bn256;

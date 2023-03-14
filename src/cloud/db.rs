@@ -17,7 +17,7 @@ impl Db {
                 columns: CloudDbColumn::count(),
                 ..Default::default()
             },
-            &format!("{}/custody", db_path),
+            &format!("{}/cloud", db_path),
         )
         .map_err(|err| CloudError::InternalError(err.to_string()))?;
 

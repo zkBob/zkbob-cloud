@@ -6,7 +6,7 @@ use tokio::sync::RwLock;
 use uuid::Uuid;
 use zkbob_utils_rs::{tracing, contracts::pool::Pool};
 
-use crate::{account::{Account, types::{AccountShortInfo, HistoryTx}}, config::Config, errors::CloudError, Fr, relayer::cached::CachedRelayerClient, cloud::types::{TransferTask, TransferPart, TransferStatus}, Engine};
+use crate::{account::{Account, types::{AccountShortInfo, HistoryTx}}, config::Config, errors::CloudError, Fr, relayer::cached::CachedRelayerClient, cloud::types::{TransferTask, TransferPart, TransferStatus}, Engine, web3::cached::CachedWeb3Client};
 
 use super::{db::Db, types::Transfer, queue::Queue, send_worker::run_send_worker, status_worker::run_status_worker, cleanup::AccountCleanup};
 
@@ -18,7 +18,7 @@ pub struct ZkBobCloud {
     
     pub(crate) relayer_fee: u64,
     pub(crate) relayer: Arc<CachedRelayerClient>,
-    pub(crate) pool: Pool,
+    pub(crate) web3: Arc<CachedWeb3Client>,
 
     pub(crate) send_queue: Arc<RwLock<Queue>>,
     pub(crate) status_queue: Arc<RwLock<Queue>>,
@@ -32,6 +32,8 @@ impl ZkBobCloud {
         let relayer = CachedRelayerClient::new(&config.relayer_url, &config.db_path)?;
         let relayer_fee = relayer.fee().await?;
 
+        let web3 = CachedWeb3Client::new(pool, &config.db_path)?;
+
         let send_queue = Arc::new(RwLock::new(Queue::new("send", &config.redis_url).await?));
         let status_queue = Arc::new(RwLock::new(Queue::new("status", &config.redis_url).await?));
 
@@ -42,7 +44,7 @@ impl ZkBobCloud {
             params,
             relayer_fee,
             relayer: Arc::new(relayer),
-            pool,
+            web3: Arc::new(web3),
             send_queue,
             status_queue: status_queue.clone(),
             accounts: Arc::new(RwLock::new(HashMap::new()))
@@ -79,7 +81,9 @@ impl ZkBobCloud {
 
     pub async fn history(&self, id: Uuid) -> Result<Vec<HistoryTx>, CloudError> {
         let (account, _cleanup) = self.get_account(id).await?;
-        let history = account.history(&self.pool).await;
+        account.sync(self.relayer.clone()).await?;
+        // TODO: optimistic history?
+        let history = account.history(self.web3.clone()).await;
         history
     }
 
