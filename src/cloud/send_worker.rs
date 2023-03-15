@@ -1,4 +1,4 @@
-use std::{time::Duration, thread, str::FromStr, sync::Arc};
+use std::{time::Duration, thread, str::FromStr, sync::Arc, collections::HashSet};
 
 use actix_web::web::Data;
 use libzkbob_rs::proof::prove_tx;
@@ -11,10 +11,9 @@ use crate::{errors::CloudError, helpers::timestamp};
 
 use super::{cloud::ZkBobCloud, types::{TransferPart, TransferStatus}, queue::Queue};
 
-const MAX_ATTEMPTS: u32 = 5;
-
-pub(crate) async fn run_send_worker(cloud: Data<ZkBobCloud>, check_status_queue: Arc<RwLock<Queue>>) -> Result<(), CloudError> {
+pub(crate) async fn run_send_worker(cloud: Data<ZkBobCloud>, check_status_queue: Arc<RwLock<Queue>>, max_attempts: u32) -> Result<(), CloudError> {
     tokio::task::spawn(async move {
+        let in_progress = Arc::new(RwLock::new(HashSet::new()));
         loop {
             let task = {
                 let mut send_queue = cloud.send_queue.write().await;
@@ -22,15 +21,20 @@ pub(crate) async fn run_send_worker(cloud: Data<ZkBobCloud>, check_status_queue:
             };
             match task {
                 Ok(Some((redis_id, id))) => {
+                    if !in_progress.write().await.insert(redis_id.clone()) {
+                        continue;
+                    }
                     let cloud = cloud.clone();
                     let check_status_queue = check_status_queue.clone();
+                    let in_progress = in_progress.clone();
                     thread::spawn(move || {
                         let rt = tokio::runtime::Runtime::new().unwrap();
                         rt.block_on(async {
-                            let process_result = process(cloud.clone(), id.clone()).await;
+                            let process_result = process(cloud.clone(), id.clone(), max_attempts).await;
                             if process_result.update.is_some() {
                                 if let Err(err) = cloud.db.write().await.save_part(&process_result.update.unwrap()) {
                                     tracing::error!("[send task: {}] failed to save processed task in db: {}", &id, err);
+                                    in_progress.write().await.remove(&redis_id);
                                     return;
                                 }
                             }
@@ -38,6 +42,7 @@ pub(crate) async fn run_send_worker(cloud: Data<ZkBobCloud>, check_status_queue:
                             if process_result.check_status {
                                 if let Err(err) = check_status_queue.write().await.send(id.clone()).await {
                                     tracing::error!("[send task: {}] failed to send task to check status queue: {}", &id, err);
+                                    in_progress.write().await.remove(&redis_id);
                                     return;
                                 }
                             }
@@ -46,9 +51,12 @@ pub(crate) async fn run_send_worker(cloud: Data<ZkBobCloud>, check_status_queue:
                                 let mut send_queue = cloud.send_queue.write().await;
                                 if let Err(err) = send_queue.delete(&redis_id).await {
                                     tracing::error!("[send task: {}] failed to delete task from queue: {}", &id, err);
+                                    in_progress.write().await.remove(&redis_id);
                                     return;
                                 }
                             }
+
+                            in_progress.write().await.remove(&redis_id);
                         })
                     });
                 },
@@ -70,7 +78,7 @@ pub(crate) async fn run_send_worker(cloud: Data<ZkBobCloud>, check_status_queue:
     Ok(())
 }
 
-async fn process(cloud: Data<ZkBobCloud>, id: String) -> ProcessResult {
+async fn process(cloud: Data<ZkBobCloud>, id: String, max_attempts: u32) -> ProcessResult {
     let part = match get_part(cloud.clone(), &id).await {
         Ok(part) => part,
         Err(err) => {
@@ -104,7 +112,7 @@ async fn process(cloud: Data<ZkBobCloud>, id: String) -> ProcessResult {
             },
             Err(err) => {
                 tracing::warn!("[send task: {}] failed to get status of previous task, retry attempt: {}", &id, part.attempt);
-                return ProcessResult::error_with_retry_attempts(part, err);
+                return ProcessResult::error_with_retry_attempts(part, err, max_attempts);
             }
         }
     }
@@ -125,7 +133,7 @@ async fn process(cloud: Data<ZkBobCloud>, id: String) -> ProcessResult {
             Ok(account) => account,
             Err(err) => {
                 tracing::warn!("[send task: {}] failed to get account, retry attempt: {}", &id, part.attempt);
-                return ProcessResult::error_with_retry_attempts(part, err);
+                return ProcessResult::error_with_retry_attempts(part, err, max_attempts);
             }
         };
         
@@ -133,7 +141,7 @@ async fn process(cloud: Data<ZkBobCloud>, id: String) -> ProcessResult {
             Ok(tx) => tx,
             Err(err) => {
                 tracing::warn!("[send task: {}] failed to create transfer, retry attempt: {}", &id, part.attempt);
-                return ProcessResult::error_with_retry_attempts(part, err);
+                return ProcessResult::error_with_retry_attempts(part, err, max_attempts);
             }
         };  
         tx
@@ -162,7 +170,7 @@ async fn process(cloud: Data<ZkBobCloud>, id: String) -> ProcessResult {
         Ok(response) => response,
         Err(err) => {
             tracing::warn!("[send task: {}] failed send transfer to relayer, retry attempt: {}", &id, part.attempt);
-            return ProcessResult::error_with_retry_attempts(part, err);
+            return ProcessResult::error_with_retry_attempts(part, err, max_attempts);
         }
     };
 
@@ -218,8 +226,8 @@ impl ProcessResult {
         };
     }
 
-    fn error_with_retry_attempts(part: TransferPart, err: CloudError) -> ProcessResult {
-        if part.attempt >= MAX_ATTEMPTS {
+    fn error_with_retry_attempts(part: TransferPart, err: CloudError, max_attempts: u32) -> ProcessResult {
+        if part.attempt >= max_attempts {
             return ProcessResult::error_without_retry(part, err);
         }
 

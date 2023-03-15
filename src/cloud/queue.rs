@@ -11,7 +11,7 @@ pub struct Queue {
 }
 
 impl Queue {
-    pub async fn new(name: &str, url: &str) -> Result<Self, CloudError> {
+    pub async fn new(name: &str, url: &str, delay: u32, hidden: u32) -> Result<Self, CloudError> {
         let mut rsmq = Self::init_rsmq(url).await?;
 
         let queues = rsmq.list_queues().await.map_err(|err| {
@@ -20,10 +20,17 @@ impl Queue {
         })?;
 
         if !queues.contains(&name.to_string()) {
-            rsmq.create_queue(name, None, None, None)
+            rsmq.create_queue(name, Some(hidden), Some(delay), None)
                 .await
                 .map_err(|err| {
                     tracing::error!("failed to create {} queue: {}", name, err);
+                    CloudError::InternalError(format!("failed to create {} queue", name))
+                })?;
+        } else {
+            rsmq.set_queue_attributes(name, Some(hidden as u64), Some(delay as u64), None)
+                .await
+                .map_err(|err| {
+                    tracing::error!("failed to update {} queue attributes: {}", name, err);
                     CloudError::InternalError(format!("failed to create {} queue", name))
                 })?;
         }

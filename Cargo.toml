@@ -26,6 +26,12 @@ memo-parser = { git = "https://github.com/zkBob/memo-parser", branch = "main" }
 redis = { version = "0.20.2", features = ["aio"] }
 rsmq_async = "5.1.2"
 
+[dependencies.fawkes-crypto]
+git = "https://github.com/zkBob/fawkes-crypto"
+branch = "master"
+package = "fawkes-crypto-zkbob"
+version = "4.5.0"
+features = ["multicore"]
 
 [patch.crates-io]
 libzeropool-zkbob = { git = "https://github.com/zkBob/libzeropool-zkbob", branch = "master" }

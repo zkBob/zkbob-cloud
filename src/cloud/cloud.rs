@@ -1,21 +1,40 @@
 use std::{collections::HashMap, sync::Arc};
 
 use actix_web::web::Data;
-use libzkbob_rs::libzeropool::fawkes_crypto::{ff_uint::Num, backend::bellman_groth16::Parameters};
+use libzkbob_rs::libzeropool::fawkes_crypto::{backend::bellman_groth16::Parameters, ff_uint::Num};
 use tokio::sync::RwLock;
 use uuid::Uuid;
-use zkbob_utils_rs::{tracing, contracts::pool::Pool};
+use zkbob_utils_rs::{contracts::pool::Pool, tracing};
 
-use crate::{account::{Account, types::AccountInfo, history::HistoryTx}, config::Config, errors::CloudError, Fr, relayer::cached::CachedRelayerClient, cloud::{types::{TransferTask, TransferPart, TransferStatus}, db::AccountData}, Engine, web3::cached::CachedWeb3Client, helpers::timestamp};
+use crate::{
+    account::{history::HistoryTx, types::AccountInfo, Account},
+    cloud::{
+        db::AccountData,
+        types::{TransferPart, TransferStatus, TransferTask},
+    },
+    config::Config,
+    errors::CloudError,
+    helpers::timestamp,
+    relayer::cached::CachedRelayerClient,
+    web3::cached::CachedWeb3Client,
+    Engine, Fr,
+};
 
-use super::{db::Db, types::{Transfer, AccountShortInfo}, queue::Queue, send_worker::run_send_worker, status_worker::run_status_worker, cleanup::AccountCleanup};
+use super::{
+    cleanup::AccountCleanup,
+    db::Db,
+    queue::Queue,
+    send_worker::run_send_worker,
+    status_worker::run_status_worker,
+    types::{AccountShortInfo, Transfer},
+};
 
 pub struct ZkBobCloud {
     pub(crate) config: Config,
     pub(crate) db: RwLock<Db>,
     pub(crate) pool_id: Num<Fr>,
     pub(crate) params: Parameters<Engine>,
-    
+
     pub(crate) relayer_fee: u64,
     pub(crate) relayer: Arc<CachedRelayerClient>,
     pub(crate) web3: Arc<CachedWeb3Client>,
@@ -23,22 +42,43 @@ pub struct ZkBobCloud {
     pub(crate) send_queue: Arc<RwLock<Queue>>,
     pub(crate) status_queue: Arc<RwLock<Queue>>,
 
-    pub(crate) accounts: Arc<RwLock<HashMap<Uuid, Arc<Account>>>>
+    pub(crate) accounts: Arc<RwLock<HashMap<Uuid, Arc<Account>>>>,
 }
 
 impl ZkBobCloud {
-    pub async fn new(config: Config, pool: Pool, pool_id: Num<Fr>, params: Parameters<Engine>) -> Result<Data<Self>, CloudError> {
+    pub async fn new(
+        config: Config,
+        pool: Pool,
+        pool_id: Num<Fr>,
+        params: Parameters<Engine>,
+    ) -> Result<Data<Self>, CloudError> {
         let db = Db::new(&config.db_path)?;
         let relayer = CachedRelayerClient::new(&config.relayer_url, &config.db_path)?;
         let relayer_fee = relayer.fee().await?;
 
         let web3 = CachedWeb3Client::new(pool, &config.db_path).await?;
 
-        let send_queue = Arc::new(RwLock::new(Queue::new("send", &config.redis_url).await?));
-        let status_queue = Arc::new(RwLock::new(Queue::new("status", &config.redis_url).await?));
+        let send_queue = Arc::new(RwLock::new(
+            Queue::new(
+                "send",
+                &config.redis_url,
+                config.send_worker.queue_delay_sec,
+                config.send_worker.queue_hidden_sec,
+            )
+            .await?,
+        ));
+        let status_queue = Arc::new(RwLock::new(
+            Queue::new(
+                "status",
+                &config.redis_url,
+                config.status_worker.queue_delay_sec,
+                config.status_worker.queue_hidden_sec,
+            )
+            .await?,
+        ));
 
         let cloud = Data::new(Self {
-            config,
+            config: config.clone(),
             db: RwLock::new(db),
             pool_id,
             params,
@@ -47,32 +87,48 @@ impl ZkBobCloud {
             web3: Arc::new(web3),
             send_queue,
             status_queue: status_queue.clone(),
-            accounts: Arc::new(RwLock::new(HashMap::new()))
+            accounts: Arc::new(RwLock::new(HashMap::new())),
         });
 
-        run_send_worker(cloud.clone(), status_queue).await?;
-        run_status_worker(cloud.clone()).await?;
+        run_send_worker(cloud.clone(), status_queue, config.send_worker.max_attempts).await?;
+        run_status_worker(cloud.clone(), config.status_worker.max_attempts).await?;
 
         Ok(cloud)
     }
 
-    pub async fn new_account(&self, description: String, id: Option<Uuid>, sk: Option<Vec<u8>>) -> Result<Uuid, CloudError> {
+    pub async fn new_account(
+        &self,
+        description: String,
+        id: Option<Uuid>,
+        sk: Option<Vec<u8>>,
+    ) -> Result<Uuid, CloudError> {
         let id = id.unwrap_or(uuid::Uuid::new_v4());
         let db_path = self.db.read().await.account_db_path(id);
         let account = Account::new(id, description.clone(), sk, self.pool_id, &db_path).await?;
         let id = account.id;
-        self.db.write().await.save_account(id, &AccountData{db_path, description})?;
+        self.db.write().await.save_account(
+            id,
+            &AccountData {
+                db_path,
+                description,
+            },
+        )?;
         tracing::info!("created a new account: {}", id);
         Ok(id)
     }
 
     pub async fn list_accounts(&self) -> Result<Vec<AccountShortInfo>, CloudError> {
-        Ok(self.db.read().await.get_accounts()?.into_iter().map(|(id, data)| {
-            AccountShortInfo {
+        Ok(self
+            .db
+            .read()
+            .await
+            .get_accounts()?
+            .into_iter()
+            .map(|(id, data)| AccountShortInfo {
                 id: id.as_hyphenated().to_string(),
                 description: data.description,
-            }
-        }).collect())
+            })
+            .collect())
     }
 
     pub async fn account_info(&self, id: Uuid) -> Result<AccountInfo, CloudError> {
@@ -98,7 +154,9 @@ impl ZkBobCloud {
 
     pub async fn calculate_fee(&self, id: Uuid, amount: u64) -> Result<(u64, u64), CloudError> {
         let (account, _cleanup) = self.get_account(id).await?;
-        let parts = account.get_tx_parts(amount, self.relayer_fee, "dummy").await?;
+        let parts = account
+            .get_tx_parts(amount, self.relayer_fee, "dummy")
+            .await?;
         Ok((parts.len() as u64, parts.len() as u64 * self.relayer_fee))
     }
 
@@ -119,9 +177,14 @@ impl ZkBobCloud {
         let (account, _cleanup) = self.get_account(request.account_id).await?;
         account.sync(self.relayer.clone()).await?;
 
-        let tx_parts = account.get_tx_parts(request.amount, self.relayer_fee, &request.to).await?;
-        
-        let mut task = TransferTask{ request_id: request.id.clone(), parts: Vec::new() };
+        let tx_parts = account
+            .get_tx_parts(request.amount, self.relayer_fee, &request.to)
+            .await?;
+
+        let mut task = TransferTask {
+            request_id: request.id.clone(),
+            parts: Vec::new(),
+        };
         let mut parts = Vec::new();
         for (i, tx_part) in tx_parts.into_iter().enumerate() {
             let part = TransferPart {
@@ -165,22 +228,42 @@ impl ZkBobCloud {
 
     pub fn validate_token(&self, bearer_token: &str) -> Result<(), CloudError> {
         if self.config.admin_token != bearer_token {
-            return Err(CloudError::AccessDenied)
+            return Err(CloudError::AccessDenied);
         }
         Ok(())
     }
 
-    pub(crate) async fn get_account(&self, id: Uuid) -> Result<(Arc<Account>, AccountCleanup), CloudError> {
-        let data = self.db.read().await.get_account(id)?.ok_or(CloudError::AccountNotFound)?;
+    pub(crate) async fn get_account(
+        &self,
+        id: Uuid,
+    ) -> Result<(Arc<Account>, AccountCleanup), CloudError> {
+        let data = self
+            .db
+            .read()
+            .await
+            .get_account(id)?
+            .ok_or(CloudError::AccountNotFound)?;
 
         let mut accounts = self.accounts.write().await;
-        
+
         if accounts.contains_key(&id) {
-            return Ok((accounts.get(&id).unwrap().clone(), AccountCleanup { id, accounts: self.accounts.clone() }))
-        } 
+            return Ok((
+                accounts.get(&id).unwrap().clone(),
+                AccountCleanup {
+                    id,
+                    accounts: self.accounts.clone(),
+                },
+            ));
+        }
 
         let account = Arc::new(Account::load(id, self.pool_id, &data.db_path)?);
         accounts.insert(id, account.clone());
-        Ok((account, AccountCleanup { id, accounts: self.accounts.clone() }))
+        Ok((
+            account,
+            AccountCleanup {
+                id,
+                accounts: self.accounts.clone(),
+            },
+        ))
     }
 }
