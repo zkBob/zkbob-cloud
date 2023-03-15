@@ -6,7 +6,7 @@ use tokio::sync::RwLock;
 use uuid::Uuid;
 use zkbob_utils_rs::{tracing, contracts::pool::Pool};
 
-use crate::{account::{Account, types::{AccountInfo, HistoryTx}}, config::Config, errors::CloudError, Fr, relayer::cached::CachedRelayerClient, cloud::{types::{TransferTask, TransferPart, TransferStatus}, db::AccountData}, Engine, web3::cached::CachedWeb3Client};
+use crate::{account::{Account, types::AccountInfo, history::HistoryTx}, config::Config, errors::CloudError, Fr, relayer::cached::CachedRelayerClient, cloud::{types::{TransferTask, TransferPart, TransferStatus}, db::AccountData}, Engine, web3::cached::CachedWeb3Client};
 
 use super::{db::Db, types::{Transfer, AccountShortInfo}, queue::Queue, send_worker::run_send_worker, status_worker::run_status_worker, cleanup::AccountCleanup};
 

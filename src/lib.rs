@@ -2,12 +2,14 @@ use libzkbob_rs::libzeropool::{native::params::PoolBN256, fawkes_crypto::{backen
 
 pub mod config;
 pub mod errors;
-pub mod version;
 pub mod cloud;
 pub mod account;
 pub mod helpers;
 pub mod relayer;
 pub mod web3;
+pub mod routes;
+pub mod version;
+pub mod types;
 
 pub type PoolParams = PoolBN256;
 pub type Engine = Bn256;

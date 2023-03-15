@@ -4,43 +4,11 @@ use uuid::Uuid;
 
 use crate::{Fr, errors::CloudError};
 
-#[derive(Serialize, Deserialize)]
-pub struct SignupRequest {
-    pub id: Option<String>,
-    pub sk: Option<String>,
-    pub description: String,
-}
-
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct SignupResponse {
-    pub account_id: String,
-}
-
-#[derive(Deserialize)]
-pub struct AccountInfoRequest {
+pub struct AccountShortInfo {
     pub id: String,
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GenerateAddressResponse {
-    pub address: String,
-}
-
-#[derive(Deserialize, Serialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct TransferRequest {
-    pub request_id: Option<String>,
-    pub account_id: String,
-    pub amount: u64,
-    pub to: String,
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TransferResponse {
-    pub request_id: String,
+    pub description: String,
 }
 
 pub struct Transfer {
@@ -117,37 +85,4 @@ pub struct TransferPart {
 pub struct TransferTask {
     pub request_id: String,
     pub parts: Vec<String>
-}
-
-#[derive(Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TransferStatusRequest {
-    pub request_id: String,
-}
-
-#[derive(Deserialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct CalculateFeeRequest {
-    pub account_id: String,
-    pub amount: u64,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CalculateFeeResponse {
-    pub transaction_count: u64,
-    pub total_fee: u64,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AccountShortInfo {
-    pub id: String,
-    pub description: String,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ExportKeyResponse {
-    pub sk: String,
 }

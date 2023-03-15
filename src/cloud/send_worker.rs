@@ -27,7 +27,7 @@ pub(crate) async fn run_send_worker(cloud: Data<ZkBobCloud>, check_status_queue:
                     thread::spawn(move || {
                         let rt = tokio::runtime::Runtime::new().unwrap();
                         rt.block_on(async {
-                            let process_result = process_part(cloud.clone(), id.clone()).await;
+                            let process_result = process(cloud.clone(), id.clone()).await;
                             if process_result.update.is_some() {
                                 if let Err(err) = cloud.db.write().await.save_part(&process_result.update.unwrap()) {
                                     tracing::error!("[send task: {}] failed to save processed task in db: {}", &id, err);
@@ -67,7 +67,7 @@ pub(crate) async fn run_send_worker(cloud: Data<ZkBobCloud>, check_status_queue:
     Ok(())
 }
 
-async fn process_part(cloud: Data<ZkBobCloud>, id: String) -> ProcessResult {
+async fn process(cloud: Data<ZkBobCloud>, id: String) -> ProcessResult {
     tracing::info!("[send task: {}] processing...", &id);
 
     let part = match get_part(cloud.clone(), &id).await {

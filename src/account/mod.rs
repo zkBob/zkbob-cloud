@@ -7,16 +7,17 @@ use libzkbob_rs::{
         POOL_PARAMS, constants,
         native::account::Account as NativeAccount,
     },
-    random::CustomRng, address::format_address,
+    random::CustomRng
 };
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
-use crate::{errors::CloudError, Database, Fr, PoolParams, helpers::AsU64Amount, relayer::cached::CachedRelayerClient, web3::cached::{CachedWeb3Client, Web3TxType}};
+use crate::{errors::CloudError, Database, Fr, PoolParams, helpers::AsU64Amount, relayer::cached::CachedRelayerClient, web3::cached::CachedWeb3Client};
 
-use self::{db::Db, types::{AccountInfo, HistoryTx, HistoryTxType}, tx_parser::StateUpdate};
+use self::{db::Db, types::AccountInfo, tx_parser::StateUpdate, history::HistoryTx};
 
 pub mod types;
+pub mod history;
 mod tx_parser;
 mod db;
 
@@ -203,130 +204,11 @@ impl Account {
         for memo in memos {
             let tx_hash = memo.tx_hash.clone().unwrap();
             let info = web3.get_web3_info(&tx_hash).await?;
-            match info.tx_type {
-                Web3TxType::Deposit => {
-                    let token_amount = info.token_amount.unwrap();
-                    history.push(HistoryTx { 
-                        tx_type: HistoryTxType::Deposit, 
-                        tx_hash, 
-                        timestamp: info.timestamp, 
-                        amount: token_amount as u64, 
-                        fee: info.fee.unwrap(), 
-                        to: None, 
-                        transaction_id: None, 
-                    });
-                }
-                Web3TxType::DepositPermittable => {
-                    let token_amount = info.token_amount.unwrap();
-                    history.push(HistoryTx { 
-                        tx_type: HistoryTxType::Deposit, 
-                        tx_hash, 
-                        timestamp: info.timestamp, 
-                        amount: token_amount as u64, 
-                        fee: info.fee.unwrap(), 
-                        to: None, 
-                        transaction_id: None, 
-                    });
-                }
-                Web3TxType::Transfer => {
-                    if memo.in_notes.len() == 0 && memo.out_notes.len() == 0 {
-                        let amount = {
-                            let previous_amount = match last_account {
-                                Some(acc) => acc.b.as_num().clone(),
-                                None => Num::ZERO,
-                            };
-                            memo.acc.unwrap().b.as_num() - previous_amount
-                        };
-
-                        history.push(HistoryTx { 
-                            tx_type: HistoryTxType::AggregateNotes, 
-                            tx_hash: tx_hash.clone(), 
-                            timestamp: info.timestamp, 
-                            amount: amount.as_u64_amount(), 
-                            fee: info.fee.unwrap(), 
-                            to: None, 
-                            transaction_id: None, 
-                        });
-                    }
-
-                    for note in memo.in_notes.iter() {
-                        let loopback = memo
-                            .out_notes
-                            .iter()
-                            .find(|out_note| out_note.index == note.index)
-                            .is_some();
-
-                        let tx_type = if loopback {
-                            HistoryTxType::ReturnedChange
-                        } else {
-                            HistoryTxType::TransferIn
-                        };
-                        let address =
-                            format_address::<PoolParams>(note.note.d, note.note.p_d);
-
-                        history.push(HistoryTx { 
-                            tx_type, 
-                            tx_hash: tx_hash.clone(), 
-                            timestamp: info.timestamp, 
-                            amount: note.note.b.to_num().as_u64_amount(), 
-                            fee: info.fee.unwrap(), 
-                            to: Some(address), 
-                            transaction_id: None, 
-                        });
-                    }
-
-                    let out_notes = memo.out_notes.iter().filter(|out_note| {
-                        memo
-                            .in_notes
-                            .iter()
-                            .find(|in_note| in_note.index == out_note.index)
-                            .is_none()
-                    });
-                    for note in out_notes {
-                        let address =
-                            format_address::<PoolParams>(note.note.d, note.note.p_d);
-
-                        history.push(HistoryTx { 
-                            tx_type: HistoryTxType::TransferOut, 
-                            tx_hash: tx_hash.clone(), 
-                            timestamp: info.timestamp, 
-                            amount: note.note.b.to_num().as_u64_amount(), 
-                            fee: info.fee.unwrap(), 
-                            to: Some(address), 
-                            transaction_id: None, 
-                        });
-                    }
-                }
-                Web3TxType::Withdrawal => {
-                    let fee = info.fee.unwrap();
-                    let token_amount = info.token_amount.unwrap();
-                    history.push(HistoryTx { 
-                        tx_type: HistoryTxType::Withdrawal, 
-                        tx_hash, 
-                        timestamp: info.timestamp, 
-                        amount: (-(fee as i128 + token_amount)) as u64, 
-                        fee: info.fee.unwrap(), 
-                        to: None, 
-                        transaction_id: None, 
-                    });
-                },
-                Web3TxType::DirectDeposit => {
-                    for note in memo.in_notes.iter() {
-                        let address =
-                            format_address::<PoolParams>(note.note.d, note.note.p_d);
-
-                        history.push(HistoryTx { 
-                            tx_type: HistoryTxType::DirectDeposit, 
-                            tx_hash: tx_hash.clone(), 
-                            timestamp: info.timestamp, 
-                            amount: note.note.b.to_num().as_u64_amount(), 
-                            fee: 0, // TODO: fetch fee 
-                            to: Some(address), 
-                            transaction_id: None, 
-                        });
-                    }
-                }
+            let transaction_id = {
+                self.db.read().await.get_transaction_id(&tx_hash)?
             };
+            
+            history.append(&mut HistoryTx::parse(memo.clone(), info, transaction_id, last_account));
 
             if let Some(acc) = memo.acc {
                 last_account = Some(acc);
@@ -369,6 +251,10 @@ impl Account {
         }
 
         max_amount.as_u64_amount()
+    }
+
+    pub async fn save_transaction_id(&self, tx_hash: &str, transaction_id: &str) -> Result<(), CloudError> {
+        self.db.write().await.save_transaction_id(tx_hash, transaction_id)
     }
 
     async fn get_optimistic_state(&self, relayer: Arc<CachedRelayerClient>) -> Result<StateFragment<Fr>, CloudError> {

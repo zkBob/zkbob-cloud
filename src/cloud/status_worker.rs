@@ -1,7 +1,8 @@
-use std::{thread, time::Duration};
+use std::{thread, time::Duration, str::FromStr};
 
 use actix_web::web::Data;
 use tokio::time;
+use uuid::Uuid;
 use zkbob_utils_rs::{tracing, relayer::types::JobResponse};
 
 use crate::{errors::CloudError, cloud::{send_worker::get_part, types::TransferStatus}};
@@ -23,12 +24,9 @@ pub(crate) async fn run_status_worker(cloud: Data<ZkBobCloud>) -> Result<(), Clo
                     thread::spawn(move || {
                         let rt = tokio::runtime::Runtime::new().unwrap();
                         rt.block_on(async {
-                            let process_result = process_part(cloud.clone(), id.clone()).await;
-                            if process_result.update.is_some() {
-                                if let Err(err) = cloud.db.write().await.save_part(&process_result.update.unwrap()) {
-                                    tracing::error!("[status task: {}] failed to save processed task in db: {}", &id, err);
-                                    return;
-                                }
+                            let process_result = process(cloud.clone(), id.clone()).await;
+                            if let Err(_) = postprocessing(cloud.clone(), &process_result).await {
+                                return;
                             }
                             
                             if process_result.delete {
@@ -56,7 +54,7 @@ pub(crate) async fn run_status_worker(cloud: Data<ZkBobCloud>) -> Result<(), Clo
     Ok(())
 }
 
-async fn process_part(cloud: Data<ZkBobCloud>, id: String) -> ProcessResult {
+async fn process(cloud: Data<ZkBobCloud>, id: String) -> ProcessResult {
     tracing::info!("[status task: {}] processing...", &id);
 
     let part = match get_part(cloud.clone(), &id).await {
@@ -109,11 +107,54 @@ async fn process_part(cloud: Data<ZkBobCloud>, id: String) -> ProcessResult {
     }
 }
 
+async fn postprocessing(cloud: Data<ZkBobCloud>, process_result: &ProcessResult) -> Result<(), ()> {
+    let part = match process_result.part.clone() {
+        Some(part) => part,
+        None => {
+            return Ok(())
+        }
+    };
+
+    if process_result.update {
+        if let Err(err) = cloud.db.write().await.save_part(&part) {
+            tracing::error!("[status task: {}] failed to save processed task in db: {}", &part.id, err);
+            return Err(());
+        }
+    }
+
+    // it is not critical
+    if process_result.save_transaction_id {
+        let account_id = match Uuid::from_str(&part.account_id) {
+            Ok(id) => id,
+            Err(err) => {
+                tracing::warn!("[status task: {}] failed to parse account_id: {}", &part.id, err);
+                return Ok(());
+            }
+        };
+
+        let (account, _cleanup) =  match cloud.get_account(account_id).await {
+            Ok((account, cleanup)) => (account, cleanup),
+            Err(err) => {
+                tracing::warn!("[status task: {}] failed to get account: {}", &part.id, err);
+                return Ok(());
+            }
+        };
+
+        if let Err(err) = account.save_transaction_id(&part.tx_hash.clone().unwrap(), &part.request_id).await {
+            tracing::warn!("[status task: {}] failed to save transaction id: {}", &part.id, err);
+        }
+    }
+
+    Ok(())
+}
+
 
 #[derive(Debug)]
 struct ProcessResult {
+    part: Option<TransferPart>,
     delete: bool,
-    update: Option<TransferPart>,
+    update: bool,
+    save_transaction_id: bool,
 }
 
 impl ProcessResult {
@@ -124,8 +165,10 @@ impl ProcessResult {
             ..part
         };
         ProcessResult {
+            part: Some(part),
             delete: true,
-            update: Some(part)
+            update: true,
+            save_transaction_id: true,
         }
     }
 
@@ -136,22 +179,28 @@ impl ProcessResult {
             ..part
         };
         ProcessResult {
+            part: Some(part),
             delete: false,
-            update: Some(part)
+            update: true,
+            save_transaction_id: false,
         }
     }
 
     fn retry_later() -> ProcessResult {
         return ProcessResult {
+            part: None,
             delete: false,
-            update: None,
+            update: false,
+            save_transaction_id: false,
         };
     }
 
     fn delete_from_queue() -> ProcessResult {
         return ProcessResult {
+            part: None,
             delete: true,
-            update: None,
+            update: false,
+            save_transaction_id: false,
         };
     }
 
@@ -165,8 +214,10 @@ impl ProcessResult {
             ..part
         };
         return ProcessResult {
+            part: Some(part),
             delete: false,
-            update: Some(part),
+            update: true,
+            save_transaction_id: false,
         };
     }
 
@@ -176,8 +227,10 @@ impl ProcessResult {
             ..part
         };
         return ProcessResult {
+            part: Some(part),
             delete: true,
-            update: Some(part),
+            update: true,
+            save_transaction_id: false,
         };
     }
 }

@@ -80,6 +80,14 @@ impl Db {
     pub fn get_memos(&self) -> Result<Vec<DecMemo>, CloudError> {
         self.history.get_all(HistoryDbColumn::Memo.into())
     }
+
+    pub fn save_transaction_id(&mut self , tx_hash: &str, transaction_id: &str) -> Result<(), CloudError> {
+        self.history.save_string(HistoryDbColumn::TransactionId.into(), tx_hash.as_bytes(), transaction_id)
+    }
+
+    pub fn get_transaction_id(&self, tx_hash: &str) -> Result<Option<String>, CloudError> {
+        self.history.get_string(HistoryDbColumn::TransactionId.into(), tx_hash.as_bytes())
+    }
 }
 
 pub enum AccountDbColumn {
@@ -100,11 +108,12 @@ impl Into<u32> for AccountDbColumn {
 
 pub enum HistoryDbColumn {
     Memo,
+    TransactionId
 }
 
 impl HistoryDbColumn {
     fn count() -> u32 {
-        1
+        2
     }
 }
 
