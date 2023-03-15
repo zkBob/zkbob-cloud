@@ -32,7 +32,7 @@ impl ZkBobCloud {
         let relayer = CachedRelayerClient::new(&config.relayer_url, &config.db_path)?;
         let relayer_fee = relayer.fee().await?;
 
-        let web3 = CachedWeb3Client::new(pool, &config.db_path)?;
+        let web3 = CachedWeb3Client::new(pool, &config.db_path).await?;
 
         let send_queue = Arc::new(RwLock::new(Queue::new("send", &config.redis_url).await?));
         let status_queue = Arc::new(RwLock::new(Queue::new("status", &config.redis_url).await?));

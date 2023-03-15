@@ -142,6 +142,7 @@ impl HistoryTx {
                 });
             },
             Web3TxType::DirectDeposit => {
+                let fee = info.fee.unwrap();
                 for note in memo.in_notes.iter() {
                     let address =
                         format_address::<PoolParams>(note.note.d, note.note.p_d);
@@ -151,7 +152,7 @@ impl HistoryTx {
                         tx_hash: tx_hash.clone(), 
                         timestamp: info.timestamp, 
                         amount: note.note.b.to_num().as_u64_amount(), 
-                        fee: 0, // TODO: fetch fee 
+                        fee,
                         to: Some(address), 
                         transaction_id: transaction_id.clone(), 
                     });

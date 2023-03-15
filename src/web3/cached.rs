@@ -2,7 +2,7 @@ use memo_parser::calldata::{ParsedCalldata, CalldataContent, transact::memo::TxT
 use serde::{Serialize, Deserialize};
 use tokio::sync::RwLock;
 use web3::types::H256;
-use zkbob_utils_rs::{contracts::pool::Pool, tracing};
+use zkbob_utils_rs::{contracts::{pool::Pool, dd::DdContract}, tracing};
 
 use crate::errors::CloudError;
 
@@ -27,14 +27,17 @@ pub struct TxWeb3Info {
 
 pub struct CachedWeb3Client {
     pool: Pool,
+    dd: DdContract,
     db: RwLock<Db>,
 }
 
 impl CachedWeb3Client {
-    pub fn new(pool: Pool, db_path: &str) -> Result<Self, CloudError> {
+    pub async fn new(pool: Pool, db_path: &str) -> Result<Self, CloudError> {
         let db = Db::new(db_path)?;
+        let dd = pool.dd_contract().await?;
         Ok(CachedWeb3Client {
             pool,
+            dd,
             db: RwLock::new(db),
         })
     }
@@ -76,9 +79,9 @@ impl CachedWeb3Client {
                 };
                 Ok((tx_type, Some(fee), Some(calldata.token_amount)))
             }
-            CalldataContent::AppendDirectDeposit(calldata) => {
-                // TODO: fetch fee somehow
-                Ok((Web3TxType::DirectDeposit, None, None))
+            CalldataContent::AppendDirectDeposit(_) => {
+                let fee = self.dd.fee().await?;
+                Ok((Web3TxType::DirectDeposit, Some(fee), None))
             }
             _ => Err(CloudError::InternalError("unknown tx".to_string())),
         }?;
