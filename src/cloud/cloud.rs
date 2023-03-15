@@ -6,7 +6,7 @@ use tokio::sync::RwLock;
 use uuid::Uuid;
 use zkbob_utils_rs::{tracing, contracts::pool::Pool};
 
-use crate::{account::{Account, types::AccountInfo, history::HistoryTx}, config::Config, errors::CloudError, Fr, relayer::cached::CachedRelayerClient, cloud::{types::{TransferTask, TransferPart, TransferStatus}, db::AccountData}, Engine, web3::cached::CachedWeb3Client};
+use crate::{account::{Account, types::AccountInfo, history::HistoryTx}, config::Config, errors::CloudError, Fr, relayer::cached::CachedRelayerClient, cloud::{types::{TransferTask, TransferPart, TransferStatus}, db::AccountData}, Engine, web3::cached::CachedWeb3Client, helpers::timestamp};
 
 use super::{db::Db, types::{Transfer, AccountShortInfo}, queue::Queue, send_worker::run_send_worker, status_worker::run_status_worker, cleanup::AccountCleanup};
 
@@ -136,6 +136,7 @@ impl ZkBobCloud {
                 tx_hash: None,
                 depends_on: (i > 0).then_some(format!("{}.{}", &request.id, i - 1)),
                 attempt: 0,
+                timestamp: timestamp(),
             };
             parts.push(part);
             task.parts.push(format!("{}.{}", &request.id, i));

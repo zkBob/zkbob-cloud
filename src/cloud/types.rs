@@ -79,6 +79,7 @@ pub struct TransferPart {
     pub tx_hash: Option<String>,
     pub depends_on: Option<String>,
     pub attempt: u32,
+    pub timestamp: u64,
 }
 
 #[derive(Serialize, Deserialize, Debug)]

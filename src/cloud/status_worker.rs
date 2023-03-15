@@ -5,7 +5,7 @@ use tokio::time;
 use uuid::Uuid;
 use zkbob_utils_rs::{tracing, relayer::types::JobResponse};
 
-use crate::{errors::CloudError, cloud::{send_worker::get_part, types::TransferStatus}};
+use crate::{errors::CloudError, cloud::{send_worker::get_part, types::TransferStatus}, helpers::timestamp};
 
 use super::{cloud::ZkBobCloud, types::TransferPart};
 
@@ -39,12 +39,16 @@ pub(crate) async fn run_status_worker(cloud: Data<ZkBobCloud>) -> Result<(), Clo
                         })
                     });
                 },
-                Ok(None) => {},
+                Ok(None) => {
+                    time::sleep(Duration::from_millis(500)).await;
+                },
                 Err(_) => {
                     let mut status_queue = cloud.status_queue.write().await;
                     match status_queue.reconnect().await {
                         Ok(_) => tracing::info!("connection to redis reestablished"),
-                        Err(_) => {}
+                        Err(_) => {
+                            time::sleep(Duration::from_millis(5000)).await;
+                        }
                     }
                 }
             }
@@ -92,7 +96,7 @@ async fn process(cloud: Data<ZkBobCloud>, id: String) -> ProcessResult {
                 }
                 TransferStatus::Failed(err) => {
                     tracing::warn!("[status task: {}] task was rejected by relayer: {}", &id, err);
-                    ProcessResult::error_without_retry(part, err)
+                    ProcessResult::rejected(part, err, response.tx_hash)
                 },
                 _ => {
                     tracing::info!("[status task: {}] task is not finished yet, postpone task", &id);
@@ -162,6 +166,7 @@ impl ProcessResult {
         let part = TransferPart {
             status: TransferStatus::Done,
             tx_hash: Some(tx_hash),
+            timestamp: timestamp(),
             ..part
         };
         ProcessResult {
@@ -169,6 +174,21 @@ impl ProcessResult {
             delete: true,
             update: true,
             save_transaction_id: true,
+        }
+    }
+
+    fn rejected(part: TransferPart, err: CloudError, tx_hash: Option<String>) -> ProcessResult {
+        let part = TransferPart {
+            status: TransferStatus::Failed(err),
+            tx_hash,
+            timestamp: timestamp(),
+            ..part
+        };
+        ProcessResult {
+            part: Some(part),
+            delete: true,
+            update: true,
+            save_transaction_id: false,
         }
     }
 
@@ -224,6 +244,7 @@ impl ProcessResult {
     fn error_without_retry(part: TransferPart, err: CloudError) -> ProcessResult {
         let part = TransferPart {
             status: TransferStatus::Failed(err),
+            timestamp: timestamp(),
             ..part
         };
         return ProcessResult {

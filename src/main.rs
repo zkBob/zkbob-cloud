@@ -1,7 +1,7 @@
 use actix_cors::Cors;
 use actix_web::{web::{Data, JsonConfig, get, post}, App, middleware::Logger, HttpServer, HttpResponse};
 use libzkbob_rs::libzeropool::{fawkes_crypto::backend::bellman_groth16::Parameters, POOL_PARAMS};
-use zkbob_cloud::{Engine, config::Config, errors::CloudError, version, cloud::cloud::ZkBobCloud, routes::{signup, account_info, list_accounts, generate_shielded_address, history, transfer, transfer_status, calculate_fee, export_key}};
+use zkbob_cloud::{Engine, config::Config, errors::CloudError, version, cloud::cloud::ZkBobCloud, routes::{signup, account_info, list_accounts, generate_shielded_address, history, transfer, transaction_status, calculate_fee, export_key, transaction_trace}};
 use zkbob_utils_rs::{telemetry::telemetry, contracts::pool::Pool, tracing};
 
 
@@ -56,7 +56,8 @@ async fn main() -> std::io::Result<()> {
             .route("/generateAddress", get().to(generate_shielded_address))
             .route("/history", get().to(history))
             .route("/transfer", post().to(transfer))
-            .route("/transactionStatus", get().to(transfer_status))
+            .route("/transactionStatus", get().to(transaction_status))
+            .route("/transactionTrace", get().to(transaction_trace))
             .route("/calculateFee", get().to(calculate_fee))
             .route("/export", get().to(export_key))
     })

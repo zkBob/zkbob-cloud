@@ -5,7 +5,7 @@ use actix_web_httpauth::extractors::bearer::BearerAuth;
 use uuid::Uuid;
 use zkbob_utils_rs::tracing;
 
-use crate::{errors::CloudError, types::{SignupRequest, SignupResponse, AccountInfoRequest, GenerateAddressResponse, TransferRequest, TransferResponse, TransferStatusRequest, CalculateFeeRequest, CalculateFeeResponse, ExportKeyResponse, HistoryRecord}, cloud::{cloud::ZkBobCloud, types::Transfer}};
+use crate::{errors::CloudError, types::{SignupRequest, SignupResponse, AccountInfoRequest, GenerateAddressResponse, TransferRequest, TransferResponse, TransactionStatusRequest, CalculateFeeRequest, CalculateFeeResponse, ExportKeyResponse, HistoryRecord, TransactionStatusResponse}, cloud::{cloud::ZkBobCloud, types::Transfer}};
 
 pub async fn signup(
     request: Json<SignupRequest>,
@@ -95,12 +95,22 @@ pub async fn transfer(
     Ok(HttpResponse::Ok().json(TransferResponse{ request_id }))
 }
 
-pub async fn transfer_status(
-    request: Query<TransferStatusRequest>,
+pub async fn transaction_trace(
+    request: Query<TransactionStatusRequest>,
+    cloud: Data<ZkBobCloud>,
+    bearer: BearerAuth,
+) -> Result<HttpResponse, CloudError> {
+    cloud.validate_token(bearer.token())?;
+    let parts = cloud.transfer_status(&request.request_id).await?;
+    Ok(HttpResponse::Ok().json(parts))
+}
+
+pub async fn transaction_status(
+    request: Query<TransactionStatusRequest>,
     cloud: Data<ZkBobCloud>,
 ) -> Result<HttpResponse, CloudError> {
     let parts = cloud.transfer_status(&request.request_id).await?;
-    Ok(HttpResponse::Ok().json(parts))
+    Ok(HttpResponse::Ok().json(TransactionStatusResponse::from(parts)))
 }
 
 pub async fn calculate_fee(

@@ -1,6 +1,6 @@
 use serde::{Serialize, Deserialize};
 
-use crate::account::history::{HistoryTxType, HistoryTx};
+use crate::{account::history::{HistoryTxType, HistoryTx}, cloud::types::{TransferPart, TransferStatus}};
 
 
 #[derive(Serialize, Deserialize)]
@@ -44,7 +44,7 @@ pub struct TransferResponse {
 
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct TransferStatusRequest {
+pub struct TransactionStatusRequest {
     pub request_id: String,
 }
 
@@ -132,5 +132,72 @@ impl HistoryRecord {
                 }
             })
             .collect::<Vec<_>>()
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TransactionStatusResponse {
+    pub status: String,
+    pub timestamp: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tx_hash: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub linked_tx_hashes: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub failure_reason: Option<String>,
+}
+
+impl TransactionStatusResponse {
+    pub fn from(parts: Vec<TransferPart>) -> Self {
+        let mut tx_hashes = parts
+            .iter()
+            .filter(|job| job.tx_hash.is_some() && job.status != TransferStatus::Mining)
+            .map(|job| job.tx_hash.clone().unwrap())
+            .collect::<Vec<_>>();
+
+        let tx_hash = tx_hashes.pop();
+        let linked_tx_hashes = tx_hash.is_some().then(|| tx_hashes);
+
+        let (status, timestamp, failure_reason) = {
+            let last = parts.last().unwrap();
+            match last.status {
+                TransferStatus::Done => (TransferStatus::Done.status(), last.timestamp, None),
+                TransferStatus::Failed(_) => {
+                    let first_failed_part = parts
+                        .iter()
+                        .filter(|job| match job.status {
+                            TransferStatus::Failed(_) => true,
+                            _ => false,
+                        })
+                        .collect::<Vec<_>>()
+                        .first()
+                        .unwrap()
+                        .clone();
+
+                    (
+                        first_failed_part.status.status(),
+                        first_failed_part.timestamp,
+                        first_failed_part.status.failure_reason(),
+                    )
+                }
+                _ => {
+                    let relevant_part = parts
+                        .iter()
+                        .filter(|job| job.status != TransferStatus::New)
+                        .last()
+                        .unwrap();
+                    (TransferStatus::Relaying.status(), relevant_part.timestamp, None)
+                }
+            }
+        };
+
+        TransactionStatusResponse {
+            status,
+            timestamp,
+            tx_hash,
+            linked_tx_hashes,
+            failure_reason,
+        }
     }
 }

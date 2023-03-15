@@ -7,7 +7,7 @@ use tokio::{sync::RwLock, time};
 use uuid::Uuid;
 use zkbob_utils_rs::{tracing, relayer::types::{Proof, TransactionRequest}};
 
-use crate::errors::CloudError;
+use crate::{errors::CloudError, helpers::timestamp};
 
 use super::{cloud::ZkBobCloud, types::{TransferPart, TransferStatus}, queue::Queue};
 
@@ -52,24 +52,25 @@ pub(crate) async fn run_send_worker(cloud: Data<ZkBobCloud>, check_status_queue:
                         })
                     });
                 },
-                Ok(None) => {},
+                Ok(None) => {
+                    time::sleep(Duration::from_millis(500)).await;
+                },
                 Err(_) => {
                     let mut send_queue = cloud.send_queue.write().await;
                     match send_queue.reconnect().await {
                         Ok(_) => tracing::info!("connection to redis reestablished"),
-                        Err(_) => {}
+                        Err(_) => {
+                            time::sleep(Duration::from_millis(5000)).await;
+                        }
                     }
                 }
             }
-            time::sleep(Duration::from_millis(500)).await;
         }
     });
     Ok(())
 }
 
 async fn process(cloud: Data<ZkBobCloud>, id: String) -> ProcessResult {
-    tracing::info!("[send task: {}] processing...", &id);
-
     let part = match get_part(cloud.clone(), &id).await {
         Ok(part) => part,
         Err(err) => {
@@ -107,6 +108,8 @@ async fn process(cloud: Data<ZkBobCloud>, id: String) -> ProcessResult {
             }
         }
     }
+
+    tracing::info!("[send task: {}] processing...", &id);
 
     let account_id = match Uuid::from_str(&part.account_id) {
         Ok(account_id) => account_id,
@@ -180,6 +183,7 @@ impl ProcessResult {
             status: TransferStatus::Relaying,
             job_id: Some(job_id),
             attempt: 0,
+            timestamp: timestamp(),
             ..part
         };
     
@@ -233,6 +237,7 @@ impl ProcessResult {
     fn error_without_retry(part: TransferPart, err: CloudError) -> ProcessResult {
         let part = TransferPart {
             status: TransferStatus::Failed(err),
+            timestamp: timestamp(),
             ..part
         };
         return ProcessResult {
