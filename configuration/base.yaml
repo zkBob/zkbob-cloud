@@ -3,7 +3,7 @@ port: 8001
 transfer_params_path: "./params/transfer_params.bin"
 db_path: "./data"
 relayer_url: "https://relayer.thgkjlr.website"
-redis_url: "redis://localhost:6379"
+redis_url: "redis://zkbob-cloud-redis:6379"
 admin_token: "123"
 telemetry:
   kind: Stdout
