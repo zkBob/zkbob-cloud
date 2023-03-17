@@ -22,7 +22,7 @@ impl KeyValueDb {
         )
         .map_err(|err| {
             tracing::error!("failed to open db [{}] with err: {:?}", path, err);
-            CloudError::InternalError(format!("failed to open db"))
+            CloudError::InternalError("failed to open db".to_string())
         })?;
         Ok(KeyValueDb { path: path.to_string(), db })
     }
@@ -33,7 +33,7 @@ impl KeyValueDb {
             Some(value) => {
                 Ok(Some(serde_json::from_slice(&value).map_err(|err| {
                     tracing::error!("failed to deserialize value [{:?}] from db: [{}] with err: {:?}", value, self.path, err);
-                    CloudError::DataBaseReadError(format!("failed to deserialize value from db"))
+                    CloudError::DataBaseReadError("failed to deserialize value from db".to_string())
                 })?))
             },
             None => Ok(None)
@@ -46,7 +46,7 @@ impl KeyValueDb {
             Some(value) => {
                 Ok(Some(String::from_utf8(value).map_err(|err| {
                     tracing::error!("failed to deserialize value from db: [{}] with err: {:?}", self.path, err);
-                    CloudError::DataBaseReadError(format!("failed to deserialize value from db"))
+                    CloudError::DataBaseReadError("failed to deserialize value from db".to_string())
                 })?))
             },
             None => Ok(None)
@@ -56,7 +56,7 @@ impl KeyValueDb {
     pub fn get_raw(&self, column: u32, key: &[u8]) -> Result<Option<Vec<u8>>, CloudError> {
         self.db.get(column, key).map_err(|err| {
             tracing::error!("failed to get value [{}, {:?}] from db: [{}] with err: {:?}", column, key, self.path, err);
-            CloudError::DataBaseReadError(format!("failed to get value from db"))
+            CloudError::DataBaseReadError("failed to get value from db".to_string())
         })
     }
 
@@ -65,7 +65,7 @@ impl KeyValueDb {
         for (_, value) in self.db.iter(column) {
             let item = serde_json::from_slice(&value).map_err(|err| {
                 tracing::error!("failed to deserialize value [{:?}] from db: [{}] with err: {:?}", value, self.path, err);
-                CloudError::DataBaseReadError(format!("failed to deserialize value from db"))
+                CloudError::DataBaseReadError("failed to deserialize value from db".to_string())
             })?;
             items.push(item);
         }
@@ -77,7 +77,7 @@ impl KeyValueDb {
         for (key, value) in self.db.iter(column) {
             let item = serde_json::from_slice(&value).map_err(|err| {
                 tracing::error!("failed to deserialize value [{:?}] from db: [{}] with err: {:?}", value, self.path, err);
-                CloudError::DataBaseReadError(format!("failed to deserialize value from db"))
+                CloudError::DataBaseReadError("failed to deserialize value from db".to_string())
             })?;
             items.push((key.to_vec(), item));
         }
@@ -91,7 +91,7 @@ impl KeyValueDb {
     pub fn save<T>(&mut self, column: u32, key: &[u8], value: &T) -> Result<(), CloudError> where T: Serialize + Debug {
         let value = serde_json::to_vec(value).map_err(|err| {
             tracing::error!("failed to serialize value [{:?}] for db: [{}] with err: {:?}", value, self.path, err);
-            CloudError::DataBaseWriteError(format!("failed to serialize value"))
+            CloudError::DataBaseWriteError("failed to serialize value".to_string())
         })?;
         self.save_raw(column, key, &value)
     }
@@ -107,7 +107,7 @@ impl KeyValueDb {
             tx
         }).map_err(|err| {
             tracing::error!("failed to save value [{}, {:?}] in db: [{}] with err: {:?}", column, key, self.path, err);
-            CloudError::DataBaseWriteError(format!("failed to save value"))
+            CloudError::DataBaseWriteError("failed to save value".to_string())
         })
     }
 
@@ -116,13 +116,13 @@ impl KeyValueDb {
         for (key, value) in kv {
             let value = serde_json::to_vec(&value).map_err(|err| {
                 tracing::error!("failed to serialize value [{:?}] for db: [{}] with err: {:?}", value, self.path, err);
-                CloudError::DataBaseWriteError(format!("failed to serialize value"))
+                CloudError::DataBaseWriteError("failed to serialize value".to_string())
             })?;
             tx.put_vec(column, &key, value);
         }
         self.db.write(tx).map_err(|err| {
             tracing::error!("failed to save tx [{}] in db: [{}] with err: {:?}", column, self.path, err);
-            CloudError::DataBaseWriteError(format!("failed to save values"))
+            CloudError::DataBaseWriteError("failed to save values".to_string())
         })
     }
 }

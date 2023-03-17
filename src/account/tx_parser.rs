@@ -15,14 +15,14 @@ pub enum ParseError {
     IncorrectPrefix(u64, u32, u32),
 }
 
-impl ParseError {
-    pub fn index(&self) -> u64 {
-        match *self {
-            ParseError::NoPrefix(idx)  => idx,
-            ParseError::IncorrectPrefix(idx,  _, _)  => idx,
-        }
-    }
-}
+// impl ParseError {
+//     pub fn index(&self) -> u64 {
+//         match *self {
+//             ParseError::NoPrefix(idx)  => idx,
+//             ParseError::IncorrectPrefix(idx,  _, _)  => idx,
+//         }
+//     }
+// }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct IndexedNote {
@@ -106,7 +106,7 @@ pub fn parse_tx(
         let delegated_deposits = tx.memo[4..]
             .chunks(MEMO_DELEGATED_DEPOSIT_SIZE)
             .take(num_deposits)
-            .map(|data| MemoDelegatedDeposit::read(data))
+            .map(MemoDelegatedDeposit::read)
             .collect::<std::io::Result<Vec<_>>>()
             .unwrap();
 
@@ -114,7 +114,7 @@ pub fn parse_tx(
             .iter()
             .enumerate()
             .filter_map(|(i, d)| {
-                let p_d = derive_key_p_d(d.receiver_d.to_num(), eta.clone(), params).x;
+                let p_d = derive_key_p_d(d.receiver_d.to_num(), *eta, params).x;
                 if d.receiver_p == p_d {
                     Some(IndexedNote {
                         index: tx.index + 1 + (i as u64),
@@ -170,7 +170,7 @@ pub fn parse_tx(
     // regular case: simple transaction memo
     let num_hashes = num_items;
     if num_hashes <= (constants::OUT + 1) as u32 {
-        let hashes = (&tx.memo[4..])
+        let hashes = (tx.memo[4..])
             .chunks(32)
             .take(num_hashes as usize)
             .map(|bytes| Num::from_uint_reduced(NumRepr(Uint::from_little_endian(bytes))));
@@ -198,7 +198,6 @@ pub fn parse_tx(
                         in_notes: in_notes.iter().map(|(index, note)| IndexedNote{index: *index, note: *note}).collect(), 
                         out_notes: out_notes.into_iter().map(|(index, note)| IndexedNote{index, note}).collect(), 
                         tx_hash: Some(tx.tx_hash),
-                        ..Default::default()
                     }],
                     state_update: StateUpdate {
                         new_leafs: vec![(tx.index, hashes.collect())],

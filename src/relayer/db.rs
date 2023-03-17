@@ -53,8 +53,8 @@ impl CacheDbColumn {
     }
 }
 
-impl Into<u32> for CacheDbColumn {
-    fn into(self) -> u32 {
-        self as u32
+impl From<CacheDbColumn> for u32 {
+    fn from(val: CacheDbColumn) -> Self {
+        val as u32
     }
 }

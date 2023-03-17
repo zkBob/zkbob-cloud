@@ -90,7 +90,7 @@ impl HistoryRecord {
         txs.iter()
             .filter(|tx| tx.tx_type != HistoryTxType::AggregateNotes)
             .map(|tx| {
-                let fee = (tx.tx_type != HistoryTxType::TransferIn && tx.tx_type != HistoryTxType::DirectDeposit).then(|| tx.fee);
+                let fee = (tx.tx_type != HistoryTxType::TransferIn && tx.tx_type != HistoryTxType::DirectDeposit).then_some(tx.fee);
 
                 match tx.transaction_id.clone() {
                     Some(request_id) => {
@@ -104,7 +104,7 @@ impl HistoryRecord {
                             .map(|linked_tx| linked_tx.tx_hash.clone())
                             .collect::<Vec<_>>();
 
-                        let linked_tx_hashes = (!linked_tx_hashes.is_empty()).then(|| linked_tx_hashes);
+                        let linked_tx_hashes = (!linked_tx_hashes.is_empty()).then_some(linked_tx_hashes);
 
                         let fee = fee.map(|fee| fee + linked_txs.map(|tx| tx.fee).sum::<u64>());
 
@@ -113,8 +113,8 @@ impl HistoryRecord {
                             tx_hash: tx.tx_hash.clone(),
                             linked_tx_hashes,
                             fee,
-                            timestamp: tx.timestamp.clone(),
-                            amount: tx.amount.clone(),
+                            timestamp: tx.timestamp,
+                            amount: tx.amount,
                             to: tx.to.clone(),
                             transaction_id: Some(request_id),
                         }
@@ -124,8 +124,8 @@ impl HistoryRecord {
                         tx_hash: tx.tx_hash.clone(),
                         linked_tx_hashes: None,
                         fee,
-                        timestamp: tx.timestamp.clone(),
-                        amount: tx.amount.clone(),
+                        timestamp: tx.timestamp,
+                        amount: tx.amount,
                         to: tx.to.clone(),
                         transaction_id: None,
                     },
@@ -157,22 +157,19 @@ impl TransactionStatusResponse {
             .collect::<Vec<_>>();
 
         let tx_hash = tx_hashes.pop();
-        let linked_tx_hashes = tx_hash.is_some().then(|| tx_hashes);
+        let linked_tx_hashes = tx_hash.is_some().then_some(tx_hashes);
 
         let (status, timestamp, failure_reason) = {
             let last = parts.last().unwrap();
             match last.status {
                 TransferStatus::Done => (TransferStatus::Done.status(), last.timestamp, None),
                 TransferStatus::Failed(_) => {
-                    let first_failed_part = parts
+                    let first_failed_part = &(*parts
                         .iter()
-                        .filter(|job| match job.status {
-                            TransferStatus::Failed(_) => true,
-                            _ => false,
-                        })
+                        .filter(|job| matches!(job.status, TransferStatus::Failed(_)))
                         .collect::<Vec<_>>()
                         .first()
-                        .unwrap()
+                        .unwrap())
                         .clone();
 
                     (

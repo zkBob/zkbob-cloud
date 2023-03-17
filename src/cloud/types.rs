@@ -45,10 +45,7 @@ impl TransferStatus {
     }
 
     pub fn is_final(&self) -> bool {
-        match self {
-            TransferStatus::Done | TransferStatus::Failed(_) => true,
-            _ => false,
-        }
+        matches!(self, TransferStatus::Done | TransferStatus::Failed(_))
     }
 
     pub fn status(&self) -> String {

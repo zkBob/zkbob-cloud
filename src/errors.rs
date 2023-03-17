@@ -92,7 +92,7 @@ impl From<config::ConfigError> for CloudError {
 }
 
 impl From<zkbob_utils_rs::relayer::error::RelayerError> for CloudError {
-    fn from(e: zkbob_utils_rs::relayer::error::RelayerError) -> Self {
+    fn from(_: zkbob_utils_rs::relayer::error::RelayerError) -> Self {
         Self::RelayerSendError
     }
 }

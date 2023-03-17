@@ -35,8 +35,8 @@ impl CacheDbCloumn {
     }
 }
 
-impl Into<u32> for CacheDbCloumn {
-    fn into(self) -> u32 {
-        self as u32
+impl From<CacheDbCloumn> for u32 {
+    fn from(val: CacheDbCloumn) -> Self {
+        val as u32
     }
 }

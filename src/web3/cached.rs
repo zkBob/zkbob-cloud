@@ -44,13 +44,13 @@ impl CachedWeb3Client {
 
     pub async fn get_web3_info(&self, tx_hash: &str) -> Result<TxWeb3Info, CloudError> {
         let info = {
-            self.db.read().await.get_web3(&tx_hash)
+            self.db.read().await.get_web3(tx_hash)
         };
         match info {
             Some(info) => Ok(info),
             None => {
-                let info = self.fetch_web3_info(&tx_hash).await?;
-                if let Err(err) = self.db.write().await.save_web3(&tx_hash, &info) {
+                let info = self.fetch_web3_info(tx_hash).await?;
+                if let Err(err) = self.db.write().await.save_web3(tx_hash, &info) {
                     tracing::warn!("failed to save web3 info for tx_hash: {}: {}", &tx_hash, err);
                 }
                 Ok(info)

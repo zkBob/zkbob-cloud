@@ -16,7 +16,7 @@ impl Queue {
 
         let queues = rsmq.list_queues().await.map_err(|err| {
             tracing::error!("failed to list redis queues: {}", err);
-            CloudError::InternalError(format!("failed to list redis queues"))
+            CloudError::InternalError("failed to list redis queues".to_string())
         })?;
 
         if !queues.contains(&name.to_string()) {
@@ -50,7 +50,7 @@ impl Queue {
     pub async fn send<T: Serialize>(&mut self, item: T) -> Result<(), CloudError> {
         let message = serde_json::to_string(&item).map_err(|err| {
             tracing::error!("failed to serialize task: {}", err);
-            CloudError::InternalError(format!("failed to serialize task"))
+            CloudError::InternalError("failed to serialize task".to_string())
         })?;
         self.rsmq
             .send_message(&self.name, message, None)
@@ -102,12 +102,12 @@ impl Queue {
     async fn init_rsmq(url: &str) -> Result<Rsmq, CloudError> {
         let client = redis::Client::open(url).map_err(|err| {
             tracing::error!("failed to connect to redis: {}", err);
-            CloudError::InternalError(format!("failed to connect to redis"))
+            CloudError::InternalError("failed to connect to redis".to_string())
         })?;
 
         let connection = client.get_async_connection().await.map_err(|err| {
             tracing::error!("failed to connect to redis: {}", err);
-            CloudError::InternalError(format!("failed to connect to redis"))
+            CloudError::InternalError("failed to connect to redis".to_string())
         })?;
 
         Ok(Rsmq::new_with_connection(Default::default(), connection))

@@ -7,7 +7,7 @@ use zkbob_utils_rs::{tracing, relayer::types::JobResponse};
 
 use crate::{errors::CloudError, cloud::{send_worker::get_part, types::TransferStatus}, helpers::timestamp};
 
-use super::{cloud::ZkBobCloud, types::TransferPart};
+use super::{ZkBobCloud, types::TransferPart};
 
 pub(crate) async fn run_status_worker(cloud: Data<ZkBobCloud>, max_attempts: u32) -> Result<(), CloudError> {
     tokio::task::spawn(async move {
@@ -29,7 +29,7 @@ pub(crate) async fn run_status_worker(cloud: Data<ZkBobCloud>, max_attempts: u32
                         let rt = tokio::runtime::Runtime::new().unwrap();
                         rt.block_on(async {
                             let process_result = process(cloud.clone(), id.clone(), max_attempts).await;
-                            if let Err(_) = postprocessing(cloud.clone(), &process_result).await {
+                            if postprocessing(cloud.clone(), &process_result).await.is_err() {
                                 in_progress.write().await.remove(&redis_id);
                                 return;
                             }
@@ -215,21 +215,21 @@ impl ProcessResult {
     }
 
     fn retry_later() -> ProcessResult {
-        return ProcessResult {
+        ProcessResult {
             part: None,
             delete: false,
             update: false,
             save_transaction_id: false,
-        };
+        }
     }
 
     fn delete_from_queue() -> ProcessResult {
-        return ProcessResult {
+        ProcessResult {
             part: None,
             delete: true,
             update: false,
             save_transaction_id: false,
-        };
+        }
     }
 
     fn error_with_retry_attempts(part: TransferPart, err: CloudError, max_attempts: u32) -> ProcessResult {
@@ -241,12 +241,12 @@ impl ProcessResult {
             attempt: part.attempt + 1,
             ..part
         };
-        return ProcessResult {
+        ProcessResult {
             part: Some(part),
             delete: false,
             update: true,
             save_transaction_id: false,
-        };
+        }
     }
 
     fn error_without_retry(part: TransferPart, err: CloudError) -> ProcessResult {
@@ -255,11 +255,11 @@ impl ProcessResult {
             timestamp: timestamp(),
             ..part
         };
-        return ProcessResult {
+        ProcessResult {
             part: Some(part),
             delete: true,
             update: true,
             save_transaction_id: false,
-        };
+        }
     }
 }

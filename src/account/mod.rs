@@ -171,7 +171,7 @@ impl Account {
         let tx_outputs = match to {
             Some(to) => {
                 vec![TxOutput {
-                    to: to.clone(),
+                    to,
                     amount: TokenAmount::new(amount),
                 }]
             }

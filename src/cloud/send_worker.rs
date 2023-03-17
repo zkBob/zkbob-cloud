@@ -9,7 +9,7 @@ use zkbob_utils_rs::{tracing, relayer::types::{Proof, TransactionRequest}};
 
 use crate::{errors::CloudError, helpers::timestamp};
 
-use super::{cloud::ZkBobCloud, types::{TransferPart, TransferStatus}, queue::Queue};
+use super::{ZkBobCloud, types::{TransferPart, TransferStatus}, queue::Queue};
 
 pub(crate) async fn run_send_worker(cloud: Data<ZkBobCloud>, check_status_queue: Arc<RwLock<Queue>>, max_attempts: u32) -> Result<(), CloudError> {
     tokio::task::spawn(async move {
@@ -195,35 +195,35 @@ impl ProcessResult {
             ..part
         };
     
-        return ProcessResult {
+        ProcessResult {
             delete: true,
             check_status: true,
             update: Some(part),
-        };
+        }
     }
 
     fn retry_later() -> ProcessResult {
-        return ProcessResult {
+        ProcessResult {
             delete: false,
             check_status: false,
             update: None,
-        };
+        }
     }
 
     fn delete_from_queue() -> ProcessResult {
-        return ProcessResult {
+        ProcessResult {
             delete: true,
             check_status: false,
             update: None,
-        };
+        }
     }
 
     fn repeat_check_status() -> ProcessResult {
-        return ProcessResult {
+        ProcessResult {
             delete: true,
             check_status: true,
             update: None,
-        };
+        }
     }
 
     fn error_with_retry_attempts(part: TransferPart, err: CloudError, max_attempts: u32) -> ProcessResult {
@@ -235,11 +235,11 @@ impl ProcessResult {
             attempt: part.attempt + 1,
             ..part
         };
-        return ProcessResult {
+        ProcessResult {
             delete: false,
             check_status: false,
             update: Some(part),
-        };
+        }
     }
 
     fn error_without_retry(part: TransferPart, err: CloudError) -> ProcessResult {
@@ -248,11 +248,11 @@ impl ProcessResult {
             timestamp: timestamp(),
             ..part
         };
-        return ProcessResult {
+        ProcessResult {
             delete: true,
             check_status: false,
             update: Some(part),
-        };
+        }
     }
 }
 

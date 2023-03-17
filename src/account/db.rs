@@ -34,7 +34,7 @@ impl Db {
         let path = format!("{}/{}", self.db_path, "tree");
         MerkleTree::new_native(Default::default(), &path, POOL_PARAMS.clone()).map_err(|err| {
             tracing::error!("failed to init MerkleTree [{}]: {:?}", path, err);
-            CloudError::InternalError(format!("failed to init MerkleTree"))
+            CloudError::InternalError("failed to init MerkleTree".to_string())
         })
     }
 
@@ -42,7 +42,7 @@ impl Db {
         let path = format!("{}/{}", self.db_path, "txs");
         SparseArray::new_native(&Default::default(), &path).map_err(|err| {
             tracing::error!("failed to init SparceArray [{}]: {:?}", path, err);
-            CloudError::InternalError(format!("failed to init SparseArray"))
+            CloudError::InternalError("failed to init SparseArray".to_string())
         })
     }
 
@@ -100,9 +100,9 @@ impl AccountDbColumn {
     }
 }
 
-impl Into<u32> for AccountDbColumn {
-    fn into(self) -> u32 {
-        self as u32
+impl From<AccountDbColumn> for u32 {
+    fn from(val: AccountDbColumn) -> Self {
+        val as u32
     }
 }
 
@@ -117,8 +117,8 @@ impl HistoryDbColumn {
     }
 }
 
-impl Into<u32> for HistoryDbColumn {
-    fn into(self) -> u32 {
-        self as u32
+impl From<HistoryDbColumn> for u32 {
+    fn from(val: HistoryDbColumn) -> Self {
+        val as u32
     }
 }

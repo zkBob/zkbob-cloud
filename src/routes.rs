@@ -5,7 +5,7 @@ use actix_web_httpauth::extractors::bearer::BearerAuth;
 use uuid::Uuid;
 use zkbob_utils_rs::tracing;
 
-use crate::{errors::CloudError, types::{SignupRequest, SignupResponse, AccountInfoRequest, GenerateAddressResponse, TransferRequest, TransferResponse, TransactionStatusRequest, CalculateFeeRequest, CalculateFeeResponse, ExportKeyResponse, HistoryRecord, TransactionStatusResponse}, cloud::{cloud::ZkBobCloud, types::Transfer}};
+use crate::{errors::CloudError, types::{SignupRequest, SignupResponse, AccountInfoRequest, GenerateAddressResponse, TransferRequest, TransferResponse, TransactionStatusRequest, CalculateFeeRequest, CalculateFeeResponse, ExportKeyResponse, HistoryRecord, TransactionStatusResponse}, cloud::{ZkBobCloud, types::Transfer}};
 
 pub async fn signup(
     request: Json<SignupRequest>,
@@ -29,7 +29,7 @@ pub async fn signup(
                     .map_err(|err| CloudError::BadRequest(format!("failed to parse sk: {}", err)))?;
                 
             sk.try_into()
-                .map_err(|_| CloudError::BadRequest(format!("failed to parse sk")))?
+                .map_err(|_| CloudError::BadRequest("failed to parse sk".to_string()))?
         },
         None => None
     };

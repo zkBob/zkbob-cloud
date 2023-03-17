@@ -38,7 +38,7 @@ impl Db {
         for (id, data) in kv {
             let id = Uuid::from_slice(&id).map_err(|err| {
                 tracing::error!("failed to parse account id: {:?}: {:?}", id, err);
-                CloudError::DataBaseReadError(format!("failed to parse account id"))
+                CloudError::DataBaseReadError("failed to parse account id".to_string())
             })?;
             accounts.push((id, data));
         }
@@ -65,7 +65,7 @@ impl Db {
     pub fn get_task(&self, id: &str) -> Result<TransferTask, CloudError> {
         self.db
             .get(CloudDbColumn::Tasks.into(), id.as_bytes())?
-            .ok_or(CloudError::InternalError(format!("task not found in db")))
+            .ok_or(CloudError::InternalError("task not found in db".to_string()))
     }
 
     pub fn task_exists(&self, id: &str) -> Result<bool, CloudError> {
@@ -74,15 +74,13 @@ impl Db {
 
     pub fn save_part(&mut self, part: &TransferPart) -> Result<(), CloudError> {
         self.db
-            .save(CloudDbColumn::Tasks.into(), &part.id.as_bytes(), part)
+            .save(CloudDbColumn::Tasks.into(), part.id.as_bytes(), part)
     }
 
     pub fn get_part(&self, id: &str) -> Result<TransferPart, CloudError> {
         self.db
             .get(CloudDbColumn::Tasks.into(), id.as_bytes())?
-            .ok_or(CloudError::InternalError(format!(
-                "task part not found in db"
-            )))
+            .ok_or(CloudError::InternalError("task part not found in db".to_string()))
     }
 }
 
@@ -97,9 +95,9 @@ impl CloudDbColumn {
     }
 }
 
-impl Into<u32> for CloudDbColumn {
-    fn into(self) -> u32 {
-        self as u32
+impl From<CloudDbColumn> for u32 {
+    fn from(val: CloudDbColumn) -> Self {
+        val as u32
     }
 }
 

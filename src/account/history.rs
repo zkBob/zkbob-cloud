@@ -60,10 +60,10 @@ impl HistoryTx {
                 });
             }
             Web3TxType::Transfer => {
-                if memo.in_notes.len() == 0 && memo.out_notes.len() == 0 {
+                if memo.in_notes.is_empty() && memo.out_notes.is_empty() {
                     let amount = {
                         let previous_amount = match last_account {
-                            Some(acc) => acc.b.as_num().clone(),
+                            Some(acc) => *acc.b.as_num(),
                             None => Num::ZERO,
                         };
                         memo.acc.unwrap().b.as_num() - previous_amount
@@ -84,8 +84,7 @@ impl HistoryTx {
                     let loopback = memo
                         .out_notes
                         .iter()
-                        .find(|out_note| out_note.index == note.index)
-                        .is_some();
+                        .any(|out_note| out_note.index == note.index);
 
                     let tx_type = if loopback {
                         HistoryTxType::ReturnedChange
@@ -107,11 +106,9 @@ impl HistoryTx {
                 }
 
                 let out_notes = memo.out_notes.iter().filter(|out_note| {
-                    memo
+                    !memo
                         .in_notes
-                        .iter()
-                        .find(|in_note| in_note.index == out_note.index)
-                        .is_none()
+                        .iter().any(|in_note| in_note.index == out_note.index)                        
                 });
                 for note in out_notes {
                     let address =
