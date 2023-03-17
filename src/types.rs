@@ -185,9 +185,11 @@ impl TransactionStatusResponse {
                     let relevant_part = parts
                         .iter()
                         .filter(|job| job.status != TransferStatus::New)
-                        .last()
-                        .unwrap();
-                    (TransferStatus::Relaying.status(), relevant_part.timestamp, None)
+                        .last();
+                    match relevant_part {
+                        Some(relevant_part) => (TransferStatus::Relaying.status(), relevant_part.timestamp, None),
+                        None => (TransferStatus::New.status(), parts[0].timestamp, None)
+                    }
                 }
             }
         };

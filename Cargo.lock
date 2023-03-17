@@ -1265,8 +1265,13 @@ dependencies = [
  "bit-vec",
  "byteorder",
  "cfg-if 0.1.10",
+ "crossbeam-channel",
  "fawkes-crypto-pairing_ce",
+ "lazy_static",
+ "log",
+ "num_cpus",
  "rand 0.4.6",
+ "rayon",
 ]
 
 [[package]]
@@ -4562,6 +4567,7 @@ dependencies = [
  "actix-web",
  "actix-web-httpauth",
  "config",
+ "fawkes-crypto-zkbob",
  "hex 0.4.3",
  "kvdb-rocksdb",
  "libzkbob-rs",

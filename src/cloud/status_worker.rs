@@ -1,7 +1,7 @@
-use std::{thread, time::Duration, str::FromStr};
+use std::{thread, time::Duration, str::FromStr, sync::Arc, collections::HashSet};
 
 use actix_web::web::Data;
-use tokio::time;
+use tokio::{time, sync::RwLock};
 use uuid::Uuid;
 use zkbob_utils_rs::{tracing, relayer::types::JobResponse};
 
@@ -9,10 +9,9 @@ use crate::{errors::CloudError, cloud::{send_worker::get_part, types::TransferSt
 
 use super::{cloud::ZkBobCloud, types::TransferPart};
 
-const MAX_ATTEMPTS: u32 = 10;
-
-pub(crate) async fn run_status_worker(cloud: Data<ZkBobCloud>) -> Result<(), CloudError> {
+pub(crate) async fn run_status_worker(cloud: Data<ZkBobCloud>, max_attempts: u32) -> Result<(), CloudError> {
     tokio::task::spawn(async move {
+        let in_progress = Arc::new(RwLock::new(HashSet::new()));
         loop {
             let task = {
                 let mut status_queue = cloud.status_queue.write().await;
@@ -20,12 +19,18 @@ pub(crate) async fn run_status_worker(cloud: Data<ZkBobCloud>) -> Result<(), Clo
             };
             match task {
                 Ok(Some((redis_id, id))) => {
+                    if !in_progress.write().await.insert(redis_id.clone()) {
+                        continue;
+                    }
+
+                    let in_progress = in_progress.clone();
                     let cloud = cloud.clone();
                     thread::spawn(move || {
                         let rt = tokio::runtime::Runtime::new().unwrap();
                         rt.block_on(async {
-                            let process_result = process(cloud.clone(), id.clone()).await;
+                            let process_result = process(cloud.clone(), id.clone(), max_attempts).await;
                             if let Err(_) = postprocessing(cloud.clone(), &process_result).await {
+                                in_progress.write().await.remove(&redis_id);
                                 return;
                             }
                             
@@ -33,9 +38,12 @@ pub(crate) async fn run_status_worker(cloud: Data<ZkBobCloud>) -> Result<(), Clo
                                 let mut status_queue = cloud.status_queue.write().await;
                                 if let Err(err) = status_queue.delete(&redis_id).await {
                                     tracing::error!("[status task: {}] failed to delete task from queue: {}", &id, err);
+                                    in_progress.write().await.remove(&redis_id);
                                     return;
                                 }
                             }
+
+                            in_progress.write().await.remove(&redis_id);
                         })
                     });
                 },
@@ -58,7 +66,7 @@ pub(crate) async fn run_status_worker(cloud: Data<ZkBobCloud>) -> Result<(), Clo
     Ok(())
 }
 
-async fn process(cloud: Data<ZkBobCloud>, id: String) -> ProcessResult {
+async fn process(cloud: Data<ZkBobCloud>, id: String, max_attempts: u32) -> ProcessResult {
     tracing::info!("[status task: {}] processing...", &id);
 
     let part = match get_part(cloud.clone(), &id).await {
@@ -106,7 +114,7 @@ async fn process(cloud: Data<ZkBobCloud>, id: String) -> ProcessResult {
         },
         Err(err) => {
             tracing::warn!("[status task: {}] failed to fetch status from relayer, retry attempt: {}", &id, part.attempt);
-            ProcessResult::error_with_retry_attempts(part, err)
+            ProcessResult::error_with_retry_attempts(part, err, max_attempts)
         }
     }
 }
@@ -224,8 +232,8 @@ impl ProcessResult {
         };
     }
 
-    fn error_with_retry_attempts(part: TransferPart, err: CloudError) -> ProcessResult {
-        if part.attempt >= MAX_ATTEMPTS {
+    fn error_with_retry_attempts(part: TransferPart, err: CloudError, max_attempts: u32) -> ProcessResult {
+        if part.attempt >= max_attempts {
             return ProcessResult::error_without_retry(part, err);
         }
 

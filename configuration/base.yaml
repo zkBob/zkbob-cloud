@@ -16,3 +16,12 @@ web3:
   provider_endpoint: "https://rpc.sepolia.org"
   provider_timeout_sec: 10
   pool_address: "0x3bd088C19960A8B5d72E4e01847791BD0DD1C9E6"
+send_worker:
+  max_attempts: 5
+  queue_delay_sec: 0
+  queue_hidden_sec: 5
+status_worker:
+  max_attempts: 10
+  queue_delay_sec: 5
+  queue_hidden_sec: 5
+  
