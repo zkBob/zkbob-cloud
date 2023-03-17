@@ -90,9 +90,9 @@ impl ZkBobCloud {
             accounts: Arc::new(RwLock::new(HashMap::new())),
         });
 
-        run_send_worker(cloud.clone(), status_queue, config.send_worker.max_attempts).await?;
-        run_status_worker(cloud.clone(), config.status_worker.max_attempts).await?;
-
+        run_send_worker(cloud.clone(), status_queue, config.send_worker.max_attempts);
+        run_status_worker(cloud.clone(), config.status_worker.max_attempts);
+        
         Ok(cloud)
     }
 

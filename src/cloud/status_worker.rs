@@ -9,25 +9,25 @@ use crate::{errors::CloudError, cloud::{send_worker::get_part, types::TransferSt
 
 use super::{ZkBobCloud, types::TransferPart};
 
-pub(crate) async fn run_status_worker(cloud: Data<ZkBobCloud>, max_attempts: u32) -> Result<(), CloudError> {
-    tokio::task::spawn(async move {
-        let in_progress = Arc::new(RwLock::new(HashSet::new()));
-        loop {
-            let task = {
-                let mut status_queue = cloud.status_queue.write().await;
-                status_queue.receive::<String>().await
-            };
-            match task {
-                Ok(Some((redis_id, id))) => {
-                    if !in_progress.write().await.insert(redis_id.clone()) {
-                        continue;
-                    }
+pub(crate) fn run_status_worker(cloud: Data<ZkBobCloud>, max_attempts: u32) {
+    thread::spawn( move || {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async move {
+            let in_progress = Arc::new(RwLock::new(HashSet::new()));
+            loop {
+                let task = {
+                    let mut status_queue = cloud.status_queue.write().await;
+                    status_queue.receive::<String>().await
+                };
+                match task {
+                    Ok(Some((redis_id, id))) => {
+                        if !in_progress.write().await.insert(redis_id.clone()) {
+                            continue;
+                        }
 
-                    let in_progress = in_progress.clone();
-                    let cloud = cloud.clone();
-                    thread::spawn(move || {
-                        let rt = tokio::runtime::Runtime::new().unwrap();
-                        rt.block_on(async {
+                        let in_progress = in_progress.clone();
+                        let cloud = cloud.clone();
+                        tokio::spawn(async move {
                             let process_result = process(cloud.clone(), id.clone(), max_attempts).await;
                             if postprocessing(cloud.clone(), &process_result).await.is_err() {
                                 in_progress.write().await.remove(&redis_id);
@@ -44,26 +44,25 @@ pub(crate) async fn run_status_worker(cloud: Data<ZkBobCloud>, max_attempts: u32
                             }
 
                             in_progress.write().await.remove(&redis_id);
-                        })
-                    });
-                },
-                Ok(None) => {
-                    time::sleep(Duration::from_millis(500)).await;
-                },
-                Err(_) => {
-                    let mut status_queue = cloud.status_queue.write().await;
-                    match status_queue.reconnect().await {
-                        Ok(_) => tracing::info!("connection to redis reestablished"),
-                        Err(_) => {
-                            time::sleep(Duration::from_millis(5000)).await;
+                        });
+                    },
+                    Ok(None) => {
+                        time::sleep(Duration::from_millis(500)).await;
+                    },
+                    Err(_) => {
+                        let mut status_queue = cloud.status_queue.write().await;
+                        match status_queue.reconnect().await {
+                            Ok(_) => tracing::info!("connection to redis reestablished"),
+                            Err(_) => {
+                                time::sleep(Duration::from_millis(5000)).await;
+                            }
                         }
                     }
                 }
+                time::sleep(Duration::from_millis(500)).await;
             }
-            time::sleep(Duration::from_millis(500)).await;
-        }
+        });
     });
-    Ok(())
 }
 
 async fn process(cloud: Data<ZkBobCloud>, id: String, max_attempts: u32) -> ProcessResult {

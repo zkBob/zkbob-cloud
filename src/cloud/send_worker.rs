@@ -3,7 +3,7 @@ use std::{time::Duration, thread, str::FromStr, sync::Arc, collections::HashSet}
 use actix_web::web::Data;
 use libzkbob_rs::proof::prove_tx;
 use memo_parser::calldata::transact::memo::TxType;
-use tokio::{sync::RwLock, time};
+use tokio::{sync::RwLock, time, task};
 use uuid::Uuid;
 use zkbob_utils_rs::{tracing, relayer::types::{Proof, TransactionRequest}};
 
@@ -11,25 +11,25 @@ use crate::{errors::CloudError, helpers::timestamp};
 
 use super::{ZkBobCloud, types::{TransferPart, TransferStatus}, queue::Queue};
 
-pub(crate) async fn run_send_worker(cloud: Data<ZkBobCloud>, check_status_queue: Arc<RwLock<Queue>>, max_attempts: u32) -> Result<(), CloudError> {
-    tokio::task::spawn(async move {
-        let in_progress = Arc::new(RwLock::new(HashSet::new()));
-        loop {
-            let task = {
-                let mut send_queue = cloud.send_queue.write().await;
-                send_queue.receive::<String>().await
-            };
-            match task {
-                Ok(Some((redis_id, id))) => {
-                    if !in_progress.write().await.insert(redis_id.clone()) {
-                        continue;
-                    }
-                    let cloud = cloud.clone();
-                    let check_status_queue = check_status_queue.clone();
-                    let in_progress = in_progress.clone();
-                    thread::spawn(move || {
-                        let rt = tokio::runtime::Runtime::new().unwrap();
-                        rt.block_on(async {
+pub(crate) fn run_send_worker(cloud: Data<ZkBobCloud>, check_status_queue: Arc<RwLock<Queue>>, max_attempts: u32) {
+    thread::spawn( move || {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async move {
+            let in_progress = Arc::new(RwLock::new(HashSet::new()));
+            loop {
+                let task = {
+                    let mut send_queue = cloud.send_queue.write().await;
+                    send_queue.receive::<String>().await
+                };
+                match task {
+                    Ok(Some((redis_id, id))) => {
+                        if !in_progress.write().await.insert(redis_id.clone()) {
+                            continue;
+                        }
+                        let cloud = cloud.clone();
+                        let check_status_queue = check_status_queue.clone();
+                        let in_progress = in_progress.clone();
+                        tokio::spawn(async move {
                             let process_result = process(cloud.clone(), id.clone(), max_attempts).await;
                             if process_result.update.is_some() {
                                 if let Err(err) = cloud.db.write().await.save_part(&process_result.update.unwrap()) {
@@ -38,7 +38,7 @@ pub(crate) async fn run_send_worker(cloud: Data<ZkBobCloud>, check_status_queue:
                                     return;
                                 }
                             }
-
+    
                             if process_result.check_status {
                                 if let Err(err) = check_status_queue.write().await.send(id.clone()).await {
                                     tracing::error!("[send task: {}] failed to send task to check status queue: {}", &id, err);
@@ -55,27 +55,26 @@ pub(crate) async fn run_send_worker(cloud: Data<ZkBobCloud>, check_status_queue:
                                     return;
                                 }
                             }
-
+    
                             in_progress.write().await.remove(&redis_id);
-                        })
-                    });
-                },
-                Ok(None) => {
-                    time::sleep(Duration::from_millis(500)).await;
-                },
-                Err(_) => {
-                    let mut send_queue = cloud.send_queue.write().await;
-                    match send_queue.reconnect().await {
-                        Ok(_) => tracing::info!("connection to redis reestablished"),
-                        Err(_) => {
-                            time::sleep(Duration::from_millis(5000)).await;
+                        });
+                    },
+                    Ok(None) => {
+                        time::sleep(Duration::from_millis(500)).await;
+                    },
+                    Err(_) => {
+                        let mut send_queue = cloud.send_queue.write().await;
+                        match send_queue.reconnect().await {
+                            Ok(_) => tracing::info!("connection to redis reestablished"),
+                            Err(_) => {
+                                time::sleep(Duration::from_millis(5000)).await;
+                            }
                         }
                     }
                 }
             }
-        }
+        })        
     });
-    Ok(())
 }
 
 async fn process(cloud: Data<ZkBobCloud>, id: String, max_attempts: u32) -> ProcessResult {
@@ -127,8 +126,7 @@ async fn process(cloud: Data<ZkBobCloud>, id: String, max_attempts: u32) -> Proc
         }
     };
 
-    let tx = {
-        
+    let tx = {  
         let (account, _cleanup) = match cloud.get_account(account_id).await {
             Ok(account) => account,
             Err(err) => {
@@ -149,12 +147,15 @@ async fn process(cloud: Data<ZkBobCloud>, id: String, max_attempts: u32) -> Proc
     
     let proving_span = tracing::info_span!("proving", task_id = &part.id);
     let (inputs, proof) = proving_span.in_scope(|| {
-        prove_tx(
-            &cloud.params,
-            &*libzkbob_rs::libzeropool::POOL_PARAMS,
-            tx.public,
-            tx.secret,
-        )
+        let cloud = cloud.clone();
+        task::block_in_place(move || {
+            prove_tx(
+                &cloud.params,
+                &*libzkbob_rs::libzeropool::POOL_PARAMS,
+                tx.public,
+                tx.secret,
+            )
+        })
     });
 
     let proof = Proof { inputs, proof };
