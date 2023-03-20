@@ -144,18 +144,28 @@ async fn process(cloud: &ZkBobCloud, id: &str, max_attempts: u32) -> ProcessResu
         tx
     };
     
-    let proving_span = tracing::info_span!("proving", task_id = &part.id);
-    let (inputs, proof) = proving_span.in_scope(|| {
+    let prove_result = {
         let params = cloud.params.clone();
-        task::block_in_place(move || {
-            prove_tx(
-                &params,
-                &*libzkbob_rs::libzeropool::POOL_PARAMS,
-                tx.public,
-                tx.secret,
-            )
-        })
-    });
+        let proving_span = tracing::info_span!("proving", task_id = &part.id);
+        task::spawn_blocking(move || {
+            proving_span.in_scope(|| {
+                prove_tx(
+                    &params,
+                    &*libzkbob_rs::libzeropool::POOL_PARAMS,
+                    tx.public,
+                    tx.secret,
+                )
+            })
+        }).await
+    };
+
+    let (inputs, proof) = match prove_result {
+        Ok((inputs, proof)) => (inputs, proof),
+        Err(err) => {
+            tracing::warn!("[send task: {}] failed to prove transfer: {}, retry attempt: {}", id, err, part.attempt);
+            return ProcessResult::error_with_retry_attempts(part, CloudError::InternalError("prove error".to_string()), max_attempts);
+        }
+    };
 
     let proof = Proof { inputs, proof };
     let request = vec![TransactionRequest {
