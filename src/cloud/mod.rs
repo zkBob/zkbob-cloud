@@ -33,14 +33,14 @@ pub struct ZkBobCloud {
     pub(crate) config: Config,
     pub(crate) db: RwLock<Db>,
     pub(crate) pool_id: Num<Fr>,
-    pub(crate) params: Parameters<Engine>,
+    pub(crate) params: Arc<Parameters<Engine>>,
 
     pub(crate) relayer_fee: u64,
-    pub(crate) relayer: Arc<CachedRelayerClient>,
-    pub(crate) web3: Arc<CachedWeb3Client>,
+    pub(crate) relayer: CachedRelayerClient,
+    pub(crate) web3: CachedWeb3Client,
 
-    pub(crate) send_queue: Arc<RwLock<Queue>>,
-    pub(crate) status_queue: Arc<RwLock<Queue>>,
+    pub(crate) send_queue: RwLock<Queue>,
+    pub(crate) status_queue: RwLock<Queue>,
 
     pub(crate) accounts: Arc<RwLock<HashMap<Uuid, Arc<Account>>>>,
 }
@@ -58,7 +58,7 @@ impl ZkBobCloud {
 
         let web3 = CachedWeb3Client::new(pool, &config.db_path).await?;
 
-        let send_queue = Arc::new(RwLock::new(
+        let send_queue = RwLock::new(
             Queue::new(
                 "send",
                 &config.redis_url,
@@ -66,8 +66,8 @@ impl ZkBobCloud {
                 config.send_worker.queue_hidden_sec,
             )
             .await?,
-        ));
-        let status_queue = Arc::new(RwLock::new(
+        );
+        let status_queue = RwLock::new(
             Queue::new(
                 "status",
                 &config.redis_url,
@@ -75,22 +75,22 @@ impl ZkBobCloud {
                 config.status_worker.queue_hidden_sec,
             )
             .await?,
-        ));
+        );
 
         let cloud = Data::new(Self {
             config: config.clone(),
             db: RwLock::new(db),
             pool_id,
-            params,
+            params: Arc::new(params),
             relayer_fee,
-            relayer: Arc::new(relayer),
-            web3: Arc::new(web3),
+            relayer,
+            web3,
             send_queue,
-            status_queue: status_queue.clone(),
+            status_queue,
             accounts: Arc::new(RwLock::new(HashMap::new())),
         });
 
-        run_send_worker(cloud.clone(), status_queue, config.send_worker.max_attempts);
+        run_send_worker(cloud.clone(), config.send_worker.max_attempts);
         run_status_worker(cloud.clone(), config.status_worker.max_attempts);
         
         Ok(cloud)
@@ -133,7 +133,7 @@ impl ZkBobCloud {
 
     pub async fn account_info(&self, id: Uuid) -> Result<AccountInfo, CloudError> {
         let (account, _cleanup) = self.get_account(id).await?;
-        account.sync(self.relayer.clone()).await?;
+        account.sync(&self.relayer).await?;
         let info = account.info(self.relayer_fee).await;
         Ok(info)
     }
@@ -146,9 +146,9 @@ impl ZkBobCloud {
 
     pub async fn history(&self, id: Uuid) -> Result<Vec<HistoryTx>, CloudError> {
         let (account, _cleanup) = self.get_account(id).await?;
-        account.sync(self.relayer.clone()).await?;
+        account.sync(&self.relayer).await?;
         // TODO: optimistic history?
-        let history = account.history(self.web3.clone()).await;
+        let history = account.history(&self.web3).await;
         history
     }
 
@@ -175,7 +175,7 @@ impl ZkBobCloud {
         }
 
         let (account, _cleanup) = self.get_account(request.account_id).await?;
-        account.sync(self.relayer.clone()).await?;
+        account.sync(&self.relayer).await?;
 
         let tx_parts = account
             .get_tx_parts(request.amount, self.relayer_fee, &request.to)
@@ -205,7 +205,7 @@ impl ZkBobCloud {
             task.parts.push(format!("{}.{}", &request.id, i));
         }
 
-        self.db.write().await.save_task(&task, parts.clone())?;
+        self.db.write().await.save_task(&task, parts.iter())?;
 
         let mut send_queue = self.send_queue.write().await;
         for part in parts {

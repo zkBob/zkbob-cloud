@@ -1,9 +1,8 @@
 use actix_cors::Cors;
-use actix_web::{web::{Data, JsonConfig, get, post}, App, middleware::Logger, HttpServer, HttpResponse};
-use libzkbob_rs::libzeropool::{fawkes_crypto::backend::bellman_groth16::Parameters, POOL_PARAMS};
+use actix_web::{web::{JsonConfig, get, post}, App, middleware::Logger, HttpServer, HttpResponse};
+use libzkbob_rs::libzeropool::{fawkes_crypto::backend::bellman_groth16::Parameters};
 use zkbob_cloud::{Engine, config::Config, errors::CloudError, version, cloud::ZkBobCloud, routes::{signup, account_info, list_accounts, generate_shielded_address, history, transfer, transaction_status, calculate_fee, export_key, transaction_trace}};
 use zkbob_utils_rs::{telemetry::telemetry, contracts::pool::Pool, tracing};
-
 
 pub fn get_params(path: &str) -> Parameters<Engine> {
     let data = std::fs::read(path).expect("failed to read file with snark params");
@@ -17,15 +16,15 @@ async fn main() -> std::io::Result<()> {
     telemetry::setup(&config.telemetry);
 
     let params = get_params(&config.transfer_params_path);
-    let pool_params = Data::new(POOL_PARAMS.clone());
     let pool = Pool::new(&config.web3).unwrap();
     let pool_id = pool.pool_id().await.expect("failed to get pool_id from contract");
     tracing::info!("pool_id: {}", pool_id);
 
-    let cloud = ZkBobCloud::new(config.clone(), pool, pool_id, params).await.expect("failed to init cloud");
-
     let host = config.host.clone();
     let port = config.port;
+
+    let cloud = ZkBobCloud::new(config, pool, pool_id, params).await.expect("failed to init cloud");
+
     tracing::info!(
         "starting webserver at http://{}:{}",
         &host,
@@ -45,7 +44,6 @@ async fn main() -> std::io::Result<()> {
         App::new()
             .wrap(cors)
             .wrap(Logger::new("%r %s %b %T %r support-id=%{zkbob-support-id}i"))
-            .app_data(pool_params.clone())
             .app_data(json_config)
             .app_data(cloud.clone())
             .route("/", get().to(HttpResponse::Ok))

@@ -67,7 +67,7 @@ impl CachedWeb3Client {
                 "transaction not found".to_string(),
             ))?;
     
-        let calldata = ParsedCalldata::new(tx.input.0.clone(), None).expect("Calldata is invalid!");
+        let calldata = ParsedCalldata::new(tx.input.0, None).expect("Calldata is invalid!");
         let (tx_type, fee, token_amount) = match calldata.content {
             CalldataContent::Transact(calldata) => {
                 let fee = calldata.memo.fee;

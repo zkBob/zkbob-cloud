@@ -12,7 +12,7 @@ services:
     volumes:
       - ../params:/app/params/
       - ../data:/app/data/
-      - ../configuration/config.yaml:/app/configuration/config.yaml
+      - ../configuration/runner.yaml:/app/configuration/config.yaml
     environment:
       CONFIG_FILE: /app/configuration/config.yaml
       RUST_LOG: info
@@ -26,4 +26,4 @@ services:
     container_name: zkbob-cloud-redis
     command: [redis-server]
     ports:
-      - 6379:6379
+      - 8002:6379

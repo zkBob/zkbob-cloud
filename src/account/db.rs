@@ -69,12 +69,11 @@ impl Db {
             .get_string(AccountDbColumn::General.into(), "description".as_bytes())
     }
 
-    pub fn save_memos(&mut self, memos: Vec<DecMemo>) -> Result<(), CloudError> {
-        let kv = memos
-            .into_iter()
-            .map(|memo| (memo.index.to_be_bytes().to_vec(), memo))
-            .collect();
-        self.history.save_all(HistoryDbColumn::Memo.into(), kv)
+    pub fn save_memos<'a, I>(&mut self, memos: I) -> Result<(), CloudError> 
+    where
+        I: Iterator<Item = &'a DecMemo>,
+    {
+        self.history.save_all(HistoryDbColumn::Memo.into(), memos, |memo| memo.index.to_be_bytes().to_vec())
     }
 
     pub fn get_memos(&self) -> Result<Vec<DecMemo>, CloudError> {
