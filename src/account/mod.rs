@@ -153,15 +153,15 @@ impl Account {
     }
 
     pub async fn sync(&self, relayer: &CachedRelayerClient) -> Result<(), CloudError> {
-        let (account_index, eta, params) = {
-            let inner = self.inner.read().await;
-            (inner.state.tree.next_index(), inner.keys.eta, &inner.params.clone())
-        };
+        let account_index = self.next_index().await;
         let relayer_index = relayer.info().await?.delta_index;
 
         let limit = (relayer_index - account_index) / (constants::OUT as u64 + 1);
         let txs = relayer.transactions(account_index, limit, false).await?;
-        let parse_result = tx_parser::parse_txs(txs, &eta, params)?;
+        let parse_result = {
+            let inner = self.inner.read().await;
+            tx_parser::parse_txs(txs, &inner.keys.eta, &inner.params)?
+        };
         self.update_state(parse_result).await?;
         Ok(())
     }
@@ -207,9 +207,10 @@ impl Account {
                 self.db.read().await.get_transaction_id(&tx_hash)?
             };
             
-            history.append(&mut HistoryTx::parse(memo.clone(), info, transaction_id, last_account));
+            let account = memo.acc;
+            history.append(&mut HistoryTx::parse(memo, info, transaction_id, last_account));
 
-            if let Some(acc) = memo.acc {
+            if let Some(acc) = account {
                 last_account = Some(acc);
             }
         }
@@ -257,21 +258,26 @@ impl Account {
     }
 
     async fn get_optimistic_state(&self, relayer: &CachedRelayerClient) -> Result<StateFragment<Fr>, CloudError> {
-        let (account_index, eta, params) = {
-            let inner = self.inner.read().await;
-            (inner.state.tree.next_index(), &inner.keys.eta.clone(), &inner.params.clone())
-        };
+        let account_index = self.next_index().await;
         let relayer_index = relayer.info().await?.optimistic_delta_index;
 
         let limit = (relayer_index - account_index) / (constants::OUT as u64 + 1);
         let txs = relayer.transactions(account_index, limit, true).await?;
         
-        // update state with mined txs
         let (mined, pending): (Vec<_>, Vec<_>) = txs.into_iter().partition(|tx| !tx.optimistic);
-        let mined_parse_result = tx_parser::parse_txs(mined, eta, params)?;
+        
+        // update state with mined txs
+        let mined_parse_result = {
+            let inner = self.inner.read().await;
+            tx_parser::parse_txs(mined, &inner.keys.eta, &inner.params)?
+        };
         self.update_state(mined_parse_result).await?;     
 
-        let parse_result = tx_parser::parse_txs(pending, eta, params)?;
+        let parse_result = {
+            let inner = self.inner.read().await;
+            tx_parser::parse_txs(pending, &inner.keys.eta, &inner.params)?
+        };
+
         Ok(StateFragment { 
             new_leafs: parse_result.state_update.new_leafs, 
             new_commitments: parse_result.state_update.new_commitments, 

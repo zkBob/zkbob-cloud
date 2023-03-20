@@ -96,7 +96,7 @@ impl CachedRelayerClient {
             };
 
             if with_optimistic || !optimistic {
-                result.push(tx.clone());
+                result.push(tx);
             }
         }
 

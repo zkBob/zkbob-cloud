@@ -30,7 +30,7 @@ use crate::{
 use self::{db::Db, queue::Queue, send_worker::run_send_worker, status_worker::run_status_worker, types::{AccountShortInfo, Transfer}, cleanup::AccountCleanup};
 
 pub struct ZkBobCloud {
-    pub(crate) config: Config,
+    pub(crate) config: Data<Config>,
     pub(crate) db: RwLock<Db>,
     pub(crate) pool_id: Num<Fr>,
     pub(crate) params: Arc<Parameters<Engine>>,
@@ -47,7 +47,7 @@ pub struct ZkBobCloud {
 
 impl ZkBobCloud {
     pub async fn new(
-        config: Config,
+        config: Data<Config>,
         pool: Pool,
         pool_id: Num<Fr>,
         params: Parameters<Engine>,
@@ -249,10 +249,7 @@ impl ZkBobCloud {
         if accounts.contains_key(&id) {
             return Ok((
                 accounts.get(&id).unwrap().clone(),
-                AccountCleanup {
-                    id,
-                    accounts: self.accounts.clone(),
-                },
+                AccountCleanup::new(id, self.accounts.clone()),
             ));
         }
 
@@ -260,10 +257,7 @@ impl ZkBobCloud {
         accounts.insert(id, account.clone());
         Ok((
             account,
-            AccountCleanup {
-                id,
-                accounts: self.accounts.clone(),
-            },
+            AccountCleanup::new(id, self.accounts.clone()),
         ))
     }
 }

@@ -1,5 +1,5 @@
 use actix_cors::Cors;
-use actix_web::{web::{JsonConfig, get, post}, App, middleware::Logger, HttpServer, HttpResponse};
+use actix_web::{web::{JsonConfig, get, post, Data}, App, middleware::Logger, HttpServer, HttpResponse};
 use libzkbob_rs::libzeropool::{fawkes_crypto::backend::bellman_groth16::Parameters};
 use zkbob_cloud::{Engine, config::Config, errors::CloudError, version, cloud::ZkBobCloud, routes::{signup, account_info, list_accounts, generate_shielded_address, history, transfer, transaction_status, calculate_fee, export_key, transaction_trace}};
 use zkbob_utils_rs::{telemetry::telemetry, contracts::pool::Pool, tracing};
@@ -12,7 +12,7 @@ pub fn get_params(path: &str) -> Parameters<Engine> {
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    let config = Config::get().expect("failed to parse config");
+    let config = Data::new(Config::get().expect("failed to parse config"));
     telemetry::setup(&config.telemetry);
 
     let params = get_params(&config.transfer_params_path);
@@ -23,7 +23,7 @@ async fn main() -> std::io::Result<()> {
     let host = config.host.clone();
     let port = config.port;
 
-    let cloud = ZkBobCloud::new(config, pool, pool_id, params).await.expect("failed to init cloud");
+    let cloud = ZkBobCloud::new(config.clone(), pool, pool_id, params).await.expect("failed to init cloud");
 
     tracing::info!(
         "starting webserver at http://{}:{}",
@@ -46,6 +46,7 @@ async fn main() -> std::io::Result<()> {
             .wrap(Logger::new("%r %s %b %T %r support-id=%{zkbob-support-id}i"))
             .app_data(json_config)
             .app_data(cloud.clone())
+            .app_data(config.clone())
             .route("/", get().to(HttpResponse::Ok))
             .route("/version", get().to(version::version))
             .route("/signup", post().to(signup))

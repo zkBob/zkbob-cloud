@@ -96,7 +96,7 @@ impl HistoryRecord {
                     Some(request_id) => {
                         let linked_txs = txs
                             .iter()
-                            .filter(|tx| tx.transaction_id == Some(request_id.clone()))
+                            .filter(|tx| tx.transaction_id.as_ref() == Some(&request_id))
                             .filter(|tx| tx.tx_type == HistoryTxType::AggregateNotes);
                         
                         let linked_tx_hashes = linked_txs

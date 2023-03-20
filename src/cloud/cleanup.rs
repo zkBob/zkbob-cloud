@@ -10,6 +10,12 @@ pub struct AccountCleanup {
     pub(crate) accounts: Arc<RwLock<HashMap<Uuid, Arc<Account>>>>
 }
 
+impl AccountCleanup {
+    pub fn new(id: Uuid, accounts: Arc<RwLock<HashMap<Uuid, Arc<Account>>>>) -> AccountCleanup {
+        AccountCleanup { id, accounts }
+    }
+}
+
 impl Drop for AccountCleanup {
     fn drop(&mut self) {
         let id = self.id;
