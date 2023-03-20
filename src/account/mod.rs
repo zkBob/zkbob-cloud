@@ -116,8 +116,8 @@ impl Account {
         to: &str,
     ) -> Result<Vec<(Option<String>, Num<Fr>)>, CloudError> {
         let account = self.inner.read().await;
-        let amount = Num::from_uint(NumRepr::from(total_amount)).unwrap();
-        let fee = Num::from_uint(NumRepr::from(fee)).unwrap();
+        let amount = Num::from_uint_reduced(NumRepr::from(total_amount));
+        let fee = Num::from_uint_reduced(NumRepr::from(fee));
 
         let mut account_balance = account.state.account_balance();
         let mut parts = vec![];
@@ -176,7 +176,7 @@ impl Account {
             }
             None => vec![],
         };
-        let fee = Num::from_uint(NumRepr::from(fee)).unwrap();
+        let fee = Num::from_uint_reduced(NumRepr::from(fee));
         let transfer = TxType::Transfer(TokenAmount::new(fee), vec![], tx_outputs);
         
         let extra_state = self.get_optimistic_state(relayer).await?;
@@ -201,10 +201,10 @@ impl Account {
         let mut last_account: Option<NativeAccount<Fr>> = None;
         let mut history = vec![];
         for memo in memos {
-            let tx_hash = memo.tx_hash.clone().unwrap();
-            let info = web3.get_web3_info(&tx_hash).await?;
+            let tx_hash = memo.tx_hash.as_ref().unwrap();
+            let info = web3.get_web3_info(tx_hash).await?;
             let transaction_id = {
-                self.db.read().await.get_transaction_id(&tx_hash)?
+                self.db.read().await.get_transaction_id(tx_hash)?
             };
             
             let account = memo.acc;
@@ -221,7 +221,7 @@ impl Account {
         &self,
         fee: u64,
     ) -> u64 {
-        let fee = Num::from_uint(NumRepr::from(fee)).unwrap();
+        let fee = Num::from_uint_reduced(NumRepr::from(fee));
 
         let (mut account_balance, notes) = {
             let account = self.inner.read().await;

@@ -30,8 +30,8 @@ pub(crate) fn run_send_worker(cloud: Data<ZkBobCloud>, max_attempts: u32) {
                         let in_progress = in_progress.clone();
                         tokio::spawn(async move {
                             let process_result = process(&cloud, &id, max_attempts).await;
-                            if process_result.update.is_some() {
-                                if let Err(err) = cloud.db.write().await.save_part(&process_result.update.unwrap()) {
+                            if let Some(update) = process_result.update {
+                                if let Err(err) = cloud.db.write().await.save_part(&update) {
                                     tracing::error!("[send task: {}] failed to save processed task in db: {}", &id, err);
                                     in_progress.write().await.remove(&redis_id);
                                     return;
@@ -97,8 +97,8 @@ async fn process(cloud: &ZkBobCloud, id: &str, max_attempts: u32) -> ProcessResu
         }
     }
     
-    if part.depends_on.is_some() {
-        match part_status(cloud, part.depends_on.as_ref().unwrap()).await {
+    if let Some(depends_on) = part.depends_on.as_ref() {
+        match part_status(cloud, depends_on).await {
             Ok(TransferStatus::Mining | TransferStatus::Done) => { },
             Ok(TransferStatus::Failed(_)) => {
                 tracing::warn!("[send task: {}] previous task has failed, marking task as failed", id);

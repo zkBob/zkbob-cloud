@@ -42,7 +42,7 @@ impl HistoryTx {
                     tx_hash, 
                     timestamp: info.timestamp, 
                     amount: token_amount as u64, 
-                    fee: info.fee.unwrap(), 
+                    fee: info.fee, 
                     to: None, 
                     transaction_id,
                 });
@@ -54,7 +54,7 @@ impl HistoryTx {
                     tx_hash, 
                     timestamp: info.timestamp, 
                     amount: token_amount as u64, 
-                    fee: info.fee.unwrap(), 
+                    fee: info.fee, 
                     to: None, 
                     transaction_id, 
                 });
@@ -74,7 +74,7 @@ impl HistoryTx {
                         tx_hash: tx_hash.clone(), 
                         timestamp: info.timestamp, 
                         amount: amount.as_u64_amount(), 
-                        fee: info.fee.unwrap(), 
+                        fee: info.fee, 
                         to: None, 
                         transaction_id: transaction_id.clone(), 
                     });
@@ -99,7 +99,7 @@ impl HistoryTx {
                         tx_hash: tx_hash.clone(), 
                         timestamp: info.timestamp, 
                         amount: note.note.b.to_num().as_u64_amount(), 
-                        fee: info.fee.unwrap(), 
+                        fee: info.fee, 
                         to: Some(address), 
                         transaction_id: transaction_id.clone(), 
                     });
@@ -119,27 +119,27 @@ impl HistoryTx {
                         tx_hash: tx_hash.clone(), 
                         timestamp: info.timestamp, 
                         amount: note.note.b.to_num().as_u64_amount(), 
-                        fee: info.fee.unwrap(), 
+                        fee: info.fee, 
                         to: Some(address), 
                         transaction_id: transaction_id.clone(), 
                     });
                 }
             }
             Web3TxType::Withdrawal => {
-                let fee = info.fee.unwrap();
+                let fee = info.fee;
                 let token_amount = info.token_amount.unwrap();
                 history.push(HistoryTx { 
                     tx_type: HistoryTxType::Withdrawal, 
                     tx_hash, 
                     timestamp: info.timestamp, 
                     amount: (-(fee as i128 + token_amount)) as u64, 
-                    fee: info.fee.unwrap(), 
+                    fee, 
                     to: None, 
                     transaction_id, 
                 });
             },
             Web3TxType::DirectDeposit => {
-                let fee = info.fee.unwrap();
+                let fee = info.fee;
                 for note in memo.in_notes.iter() {
                     let address =
                         format_address::<PoolParams>(note.note.d, note.note.p_d);

@@ -21,7 +21,7 @@ pub enum Web3TxType {
 pub struct TxWeb3Info {
     pub tx_type: Web3TxType,
     pub timestamp: u64,
-    pub fee: Option<u64>,
+    pub fee: u64,
     pub token_amount: Option<i128>,
 }
 
@@ -77,11 +77,11 @@ impl CachedWeb3Client {
                     TxType::Withdrawal => Web3TxType::Withdrawal,
                     TxType::DepositPermittable => Web3TxType::DepositPermittable,
                 };
-                Ok((tx_type, Some(fee), Some(calldata.token_amount)))
+                Ok((tx_type, fee, Some(calldata.token_amount)))
             }
             CalldataContent::AppendDirectDeposit(_) => {
                 let fee = self.dd.fee().await?;
-                Ok((Web3TxType::DirectDeposit, Some(fee), None))
+                Ok((Web3TxType::DirectDeposit, fee, None))
             }
             _ => Err(CloudError::InternalError("unknown tx".to_string())),
         }?;

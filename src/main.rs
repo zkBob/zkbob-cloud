@@ -16,7 +16,7 @@ async fn main() -> std::io::Result<()> {
     telemetry::setup(&config.telemetry);
 
     let params = get_params(&config.transfer_params_path);
-    let pool = Pool::new(&config.web3).unwrap();
+    let pool = Pool::new(&config.web3).expect("failed to init pool");
     let pool_id = pool.pool_id().await.expect("failed to get pool_id from contract");
     tracing::info!("pool_id: {}", pool_id);
 
