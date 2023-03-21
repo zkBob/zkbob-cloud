@@ -2,7 +2,10 @@ use libzkbob_rs::libzeropool::fawkes_crypto::ff_uint::{Num, NumRepr, Uint};
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 use zkbob_utils_rs::{
-    relayer::{client::RelayerClient, types::{InfoResponse, TransactionRequest, TransactionResponse, JobResponse}},
+    relayer::{
+        client::RelayerClient,
+        types::{InfoResponse, JobResponse, TransactionRequest, TransactionResponse},
+    },
     tracing,
 };
 
@@ -46,7 +49,10 @@ impl CachedRelayerClient {
         Ok(self.client.job(id).await?)
     }
 
-    pub async fn send_transactions(&self, request: Vec<TransactionRequest>) -> Result<TransactionResponse, CloudError> {
+    pub async fn send_transactions(
+        &self,
+        request: Vec<TransactionRequest>,
+    ) -> Result<TransactionResponse, CloudError> {
         Ok(self.client.send_transactions(request).await?)
     }
 
@@ -62,29 +68,22 @@ impl CachedRelayerClient {
         };
         let offset = offset + 128 * cached.len() as u64;
         let limit = limit - cached.len() as u64;
-        tracing::info!("cached: {}", cached.len());
 
         if limit == 0 {
             return Ok(cached);
         }
 
-        let fetched = self
-            .client
-            .transactions(offset, limit)
-            .await?;
-        tracing::info!("fetched: {}", fetched.len());
+        let fetched = self.client.transactions(offset, limit).await?;
 
         let mut result = cached;
-        let mut new_mined = Vec::new();
-
         for (i, tx) in fetched.into_iter().enumerate() {
             let index = offset + i as u64 * 128;
             let optimistic = &tx[0..1] != "1";
             let tx_hash = format!("0x{}", &tx[1..65]);
             let commitment: Num<Fr> = Num::from_uint_reduced(NumRepr(Uint::from_big_endian(
-                &hex::decode(&tx[65..129]).unwrap(),
+                &hex::decode(&tx[65..129])?,
             )));
-            let memo = hex::decode(&tx[129..]).unwrap();
+            let memo = hex::decode(&tx[129..])?;
 
             let tx = Transaction {
                 index,
@@ -93,16 +92,13 @@ impl CachedRelayerClient {
                 tx_hash,
                 optimistic,
             };
-            
+
             if with_optimistic || !optimistic {
-                result.push(tx.clone());
-            }
-            
-            if !optimistic {
-                new_mined.push(tx);
+                result.push(tx);
             }
         }
 
+        let new_mined = result.iter().filter(|tx| !tx.optimistic);
         let mut db = self.db.write().await;
         if db.save_txs(new_mined).is_err() {
             tracing::warn!("failed to save transactions");

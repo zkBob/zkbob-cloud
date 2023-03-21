@@ -1,4 +1,4 @@
-use std::{sync::Arc, panic::{self, AssertUnwindSafe}};
+use std::panic::{self, AssertUnwindSafe};
 
 use libzkbob_rs::{
     client::{state::State, UserAccount, TxOutput, TokenAmount, TxType, TransactionData, StateFragment},
@@ -14,7 +14,7 @@ use uuid::Uuid;
 
 use crate::{errors::CloudError, Database, Fr, PoolParams, helpers::AsU64Amount, relayer::cached::CachedRelayerClient, web3::cached::CachedWeb3Client};
 
-use self::{db::Db, types::AccountInfo, tx_parser::StateUpdate, history::HistoryTx};
+use self::{db::Db, types::AccountInfo, tx_parser::ParseResult, history::HistoryTx};
 
 pub mod types;
 pub mod history;
@@ -116,8 +116,8 @@ impl Account {
         to: &str,
     ) -> Result<Vec<(Option<String>, Num<Fr>)>, CloudError> {
         let account = self.inner.read().await;
-        let amount = Num::from_uint(NumRepr::from(total_amount)).unwrap();
-        let fee = Num::from_uint(NumRepr::from(fee)).unwrap();
+        let amount = Num::from_uint_reduced(NumRepr::from(total_amount));
+        let fee = Num::from_uint_reduced(NumRepr::from(fee));
 
         let mut account_balance = account.state.account_balance();
         let mut parts = vec![];
@@ -152,22 +152,21 @@ impl Account {
         Ok(parts)
     }
 
-    pub async fn sync(&self, relayer: Arc<CachedRelayerClient>) -> Result<(), CloudError> {
-        let (account_index, eta, params) = {
-            let inner = self.inner.read().await;
-            (inner.state.tree.next_index(), &inner.keys.eta.clone(), &inner.params.clone())
-        };
+    pub async fn sync(&self, relayer: &CachedRelayerClient) -> Result<(), CloudError> {
+        let account_index = self.next_index().await;
         let relayer_index = relayer.info().await?.delta_index;
 
         let limit = (relayer_index - account_index) / (constants::OUT as u64 + 1);
         let txs = relayer.transactions(account_index, limit, false).await?;
-        let parse_result = tx_parser::parse_txs(txs, eta, params)?;
-        self.update_state(parse_result.state_update).await;
-        self.db.write().await.save_memos(parse_result.decrypted_memos)?;
+        let parse_result = {
+            let inner = self.inner.read().await;
+            tx_parser::parse_txs(txs, &inner.keys.eta, &inner.params)?
+        };
+        self.update_state(parse_result).await?;
         Ok(())
     }
 
-    pub async fn create_transfer(&self, amount: Num<Fr>, to: Option<String>, fee: u64, relayer: Arc<CachedRelayerClient>) -> Result<TransactionData<Fr>, CloudError> {
+    pub async fn create_transfer(&self, amount: Num<Fr>, to: Option<String>, fee: u64, relayer: &CachedRelayerClient) -> Result<TransactionData<Fr>, CloudError> {
         let tx_outputs = match to {
             Some(to) => {
                 vec![TxOutput {
@@ -177,7 +176,7 @@ impl Account {
             }
             None => vec![],
         };
-        let fee = Num::from_uint(NumRepr::from(fee)).unwrap();
+        let fee = Num::from_uint_reduced(NumRepr::from(fee));
         let transfer = TxType::Transfer(TokenAmount::new(fee), vec![], tx_outputs);
         
         let extra_state = self.get_optimistic_state(relayer).await?;
@@ -194,7 +193,7 @@ impl Account {
         Ok(tx)
     }
 
-    pub async fn history(&self, web3: Arc<CachedWeb3Client>) -> Result<Vec<HistoryTx>, CloudError> {
+    pub async fn history(&self, web3: &CachedWeb3Client) -> Result<Vec<HistoryTx>, CloudError> {
         let memos = {
             self.db.read().await.get_memos()?
         };
@@ -202,15 +201,16 @@ impl Account {
         let mut last_account: Option<NativeAccount<Fr>> = None;
         let mut history = vec![];
         for memo in memos {
-            let tx_hash = memo.tx_hash.clone().unwrap();
-            let info = web3.get_web3_info(&tx_hash).await?;
+            let tx_hash = memo.tx_hash.as_ref().unwrap();
+            let info = web3.get_web3_info(tx_hash).await?;
             let transaction_id = {
-                self.db.read().await.get_transaction_id(&tx_hash)?
+                self.db.read().await.get_transaction_id(tx_hash)?
             };
             
-            history.append(&mut HistoryTx::parse(memo.clone(), info, transaction_id, last_account));
+            let account = memo.acc;
+            history.append(&mut HistoryTx::parse(memo, info, transaction_id, last_account));
 
-            if let Some(acc) = memo.acc {
+            if let Some(acc) = account {
                 last_account = Some(acc);
             }
         }
@@ -221,7 +221,7 @@ impl Account {
         &self,
         fee: u64,
     ) -> u64 {
-        let fee = Num::from_uint(NumRepr::from(fee)).unwrap();
+        let fee = Num::from_uint_reduced(NumRepr::from(fee));
 
         let (mut account_balance, notes) = {
             let account = self.inner.read().await;
@@ -257,16 +257,27 @@ impl Account {
         self.db.write().await.save_transaction_id(tx_hash, transaction_id)
     }
 
-    async fn get_optimistic_state(&self, relayer: Arc<CachedRelayerClient>) -> Result<StateFragment<Fr>, CloudError> {
-        let (account_index, eta, params) = {
-            let inner = self.inner.read().await;
-            (inner.state.tree.next_index(), &inner.keys.eta.clone(), &inner.params.clone())
-        };
+    async fn get_optimistic_state(&self, relayer: &CachedRelayerClient) -> Result<StateFragment<Fr>, CloudError> {
+        let account_index = self.next_index().await;
         let relayer_index = relayer.info().await?.optimistic_delta_index;
 
         let limit = (relayer_index - account_index) / (constants::OUT as u64 + 1);
         let txs = relayer.transactions(account_index, limit, true).await?;
-        let parse_result = tx_parser::parse_txs(txs, eta, params)?;
+        
+        let (mined, pending): (Vec<_>, Vec<_>) = txs.into_iter().partition(|tx| !tx.optimistic);
+        
+        // update state with mined txs
+        let mined_parse_result = {
+            let inner = self.inner.read().await;
+            tx_parser::parse_txs(mined, &inner.keys.eta, &inner.params)?
+        };
+        self.update_state(mined_parse_result).await?;     
+
+        let parse_result = {
+            let inner = self.inner.read().await;
+            tx_parser::parse_txs(pending, &inner.keys.eta, &inner.params)?
+        };
+
         Ok(StateFragment { 
             new_leafs: parse_result.state_update.new_leafs, 
             new_commitments: parse_result.state_update.new_commitments, 
@@ -275,7 +286,8 @@ impl Account {
         })
     }
 
-    async fn update_state(&self, state_update: StateUpdate) {
+    async fn update_state(&self, parse_result: ParseResult) -> Result<(), CloudError> {
+        let state_update = parse_result.state_update;
         let mut inner = self.inner.write().await;
         if !state_update.new_leafs.is_empty() || !state_update.new_commitments.is_empty() {
             inner
@@ -296,5 +308,7 @@ impl Account {
                 inner.state.add_note(at_index, note);
             });
         });
+
+        self.db.write().await.save_memos(parse_result.decrypted_memos.iter())
     }
 }

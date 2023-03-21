@@ -7,29 +7,30 @@ use zkbob_utils_rs::{tracing, relayer::types::JobResponse};
 
 use crate::{errors::CloudError, cloud::{send_worker::get_part, types::TransferStatus}, helpers::timestamp};
 
-use super::{ZkBobCloud, types::TransferPart};
+use super::{ZkBobCloud, types::TransferPart, cleanup::WorkerCleanup};
 
-pub(crate) async fn run_status_worker(cloud: Data<ZkBobCloud>, max_attempts: u32) -> Result<(), CloudError> {
-    tokio::task::spawn(async move {
-        let in_progress = Arc::new(RwLock::new(HashSet::new()));
-        loop {
-            let task = {
-                let mut status_queue = cloud.status_queue.write().await;
-                status_queue.receive::<String>().await
-            };
-            match task {
-                Ok(Some((redis_id, id))) => {
-                    if !in_progress.write().await.insert(redis_id.clone()) {
-                        continue;
-                    }
+pub(crate) fn run_status_worker(cloud: Data<ZkBobCloud>, max_attempts: u32) {
+    thread::spawn( move || {
+        let _cleanup = WorkerCleanup;
+        let rt = tokio::runtime::Runtime::new().expect("failed to init tokio runtime");
+        rt.block_on(async move {
+            let in_progress = Arc::new(RwLock::new(HashSet::new()));
+            loop {
+                let task = {
+                    let mut status_queue = cloud.status_queue.write().await;
+                    status_queue.receive::<String>().await
+                };
+                match task {
+                    Ok(Some((redis_id, id))) => {
+                        if !in_progress.write().await.insert(redis_id.clone()) {
+                            continue;
+                        }
 
-                    let in_progress = in_progress.clone();
-                    let cloud = cloud.clone();
-                    thread::spawn(move || {
-                        let rt = tokio::runtime::Runtime::new().unwrap();
-                        rt.block_on(async {
-                            let process_result = process(cloud.clone(), id.clone(), max_attempts).await;
-                            if postprocessing(cloud.clone(), &process_result).await.is_err() {
+                        let in_progress = in_progress.clone();
+                        let cloud = cloud.clone();
+                        tokio::spawn(async move {
+                            let process_result = process(&cloud, &id, max_attempts).await;
+                            if postprocessing(&cloud, &process_result).await.is_err() {
                                 in_progress.write().await.remove(&redis_id);
                                 return;
                             }
@@ -44,48 +45,55 @@ pub(crate) async fn run_status_worker(cloud: Data<ZkBobCloud>, max_attempts: u32
                             }
 
                             in_progress.write().await.remove(&redis_id);
-                        })
-                    });
-                },
-                Ok(None) => {
-                    time::sleep(Duration::from_millis(500)).await;
-                },
-                Err(_) => {
-                    let mut status_queue = cloud.status_queue.write().await;
-                    match status_queue.reconnect().await {
-                        Ok(_) => tracing::info!("connection to redis reestablished"),
-                        Err(_) => {
-                            time::sleep(Duration::from_millis(5000)).await;
+                        });
+                    },
+                    Ok(None) => {
+                        time::sleep(Duration::from_millis(500)).await;
+                    },
+                    Err(_) => {
+                        let mut status_queue = cloud.status_queue.write().await;
+                        match status_queue.reconnect().await {
+                            Ok(_) => tracing::info!("connection to redis reestablished"),
+                            Err(_) => {
+                                time::sleep(Duration::from_millis(5000)).await;
+                            }
                         }
                     }
                 }
+                time::sleep(Duration::from_millis(500)).await;
             }
-            time::sleep(Duration::from_millis(500)).await;
-        }
+        });
     });
-    Ok(())
 }
 
-async fn process(cloud: Data<ZkBobCloud>, id: String, max_attempts: u32) -> ProcessResult {
-    tracing::info!("[status task: {}] processing...", &id);
+async fn process(cloud: &ZkBobCloud, id: &str, max_attempts: u32) -> ProcessResult {
+    tracing::info!("[status task: {}] processing...", id);
 
-    let part = match get_part(cloud.clone(), &id).await {
+    let part = match get_part(cloud, id).await {
         Ok(part) => part,
         Err(err) => {
-            tracing::error!("[status task: {}] cannot get task from db: {}, deleting task", &id, err);
+            tracing::error!("[status task: {}] cannot get task from db: {}, deleting task", id, err);
             return ProcessResult::delete_from_queue();
         }
     };
 
-    match part.status.clone() {
+    match &part.status {
         TransferStatus::Relaying | TransferStatus::Mining => {},
         status => {
-            tracing::warn!("[status task: {}] task has status {:?}, deleting task", &id, status);
+            tracing::warn!("[status task: {}] task has status {:?}, deleting task", id, status);
             return ProcessResult::delete_from_queue();
         }
     }
 
-    let response: Result<JobResponse, CloudError> = cloud.relayer.job(&part.job_id.clone().unwrap()).await;
+    let job_id = match part.job_id.as_ref() {
+        Some(job_id) => job_id,
+        None => {
+            tracing::error!("[status task: {}] task has status {:?} but doesn't contain job id, deleting task", id, part.status);
+            return ProcessResult::delete_from_queue();
+        }
+    };
+
+    let response: Result<JobResponse, CloudError> = cloud.relayer.job(job_id).await;
     match response {
         Ok(response) => {
             let status = TransferStatus::from_relayer_response(
@@ -95,32 +103,46 @@ async fn process(cloud: Data<ZkBobCloud>, id: String, max_attempts: u32) -> Proc
 
             match status {
                 TransferStatus::Done => {
-                    tracing::info!("[status task: {}] processed successfully, tx_hash: {}", &id, &response.tx_hash.clone().unwrap());
-                    ProcessResult::success(part, response.tx_hash.unwrap())
+                    let tx_hash = match response.tx_hash {
+                        Some(tx_hash) => tx_hash,
+                        None => {
+                            tracing::info!("[status task: {}] transfer status is done but tx hash is not found", id);
+                            return ProcessResult::error_with_retry_attempts(part, CloudError::RelayerSendError, max_attempts);
+                        }
+                    };
+                    tracing::info!("[status task: {}] processed successfully, tx_hash: {}", id, &tx_hash);
+                    ProcessResult::success(part, tx_hash)
                 }
                 TransferStatus::Mining => {
-                    tracing::info!("[status task: {}] sent to contract, tx_hash: {}", &id, &response.tx_hash.clone().unwrap());
-                    ProcessResult::update_status(part, TransferStatus::Mining, response.tx_hash.unwrap())
+                    let tx_hash = match response.tx_hash {
+                        Some(tx_hash) => tx_hash,
+                        None => {
+                            tracing::info!("[status task: {}] transfer status is done but tx hash is not found", id);
+                            return ProcessResult::error_with_retry_attempts(part, CloudError::RelayerSendError, max_attempts);
+                        }
+                    };
+                    tracing::info!("[status task: {}] sent to contract, tx_hash: {}", id, &tx_hash);
+                    ProcessResult::update_status(part, TransferStatus::Mining, tx_hash)
                 }
                 TransferStatus::Failed(err) => {
-                    tracing::warn!("[status task: {}] task was rejected by relayer: {}", &id, err);
+                    tracing::warn!("[status task: {}] task was rejected by relayer: {}", id, err);
                     ProcessResult::rejected(part, err, response.tx_hash)
                 },
                 _ => {
-                    tracing::info!("[status task: {}] task is not finished yet, postpone task", &id);
+                    tracing::info!("[status task: {}] task is not finished yet, postpone task", id);
                     ProcessResult::retry_later()
                 }
             }
         },
         Err(err) => {
-            tracing::warn!("[status task: {}] failed to fetch status from relayer, retry attempt: {}", &id, part.attempt);
+            tracing::warn!("[status task: {}] failed to fetch status from relayer, retry attempt: {}", id, part.attempt);
             ProcessResult::error_with_retry_attempts(part, err, max_attempts)
         }
     }
 }
 
-async fn postprocessing(cloud: Data<ZkBobCloud>, process_result: &ProcessResult) -> Result<(), ()> {
-    let part = match process_result.part.clone() {
+async fn postprocessing(cloud: &ZkBobCloud, process_result: &ProcessResult) -> Result<(), ()> {
+    let part = match &process_result.part {
         Some(part) => part,
         None => {
             return Ok(())
@@ -128,7 +150,7 @@ async fn postprocessing(cloud: Data<ZkBobCloud>, process_result: &ProcessResult)
     };
 
     if process_result.update {
-        if let Err(err) = cloud.db.write().await.save_part(&part) {
+        if let Err(err) = cloud.db.write().await.save_part(part) {
             tracing::error!("[status task: {}] failed to save processed task in db: {}", &part.id, err);
             return Err(());
         }
@@ -152,11 +174,12 @@ async fn postprocessing(cloud: Data<ZkBobCloud>, process_result: &ProcessResult)
             }
         };
 
-        if let Err(err) = account.save_transaction_id(&part.tx_hash.clone().unwrap(), &part.request_id).await {
-            tracing::warn!("[status task: {}] failed to save transaction id: {}", &part.id, err);
+        if let Some(tx_hash) = &part.tx_hash {
+            if let Err(err) = account.save_transaction_id(tx_hash, &part.request_id).await {
+                tracing::warn!("[status task: {}] failed to save transaction id: {}", &part.id, err);
+            }
         }
     }
-
     Ok(())
 }
 

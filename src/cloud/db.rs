@@ -45,21 +45,20 @@ impl Db {
         Ok(accounts)
     }
 
-    pub fn save_task(
+    pub fn save_task<'a, I>(
         &mut self,
         task: &TransferTask,
-        parts: Vec<TransferPart>,
-    ) -> Result<(), CloudError> {
+        parts: I,
+    ) -> Result<(), CloudError> 
+    where
+        I: Iterator<Item = &'a TransferPart>,
+    {
         self.db.save(
             CloudDbColumn::Tasks.into(),
             task.request_id.as_bytes(),
             task,
         )?;
-        let kv = parts
-            .into_iter()
-            .map(|part| (part.id.as_bytes().to_vec(), part))
-            .collect();
-        self.db.save_all(CloudDbColumn::Tasks.into(), kv)
+        self.db.save_all(CloudDbColumn::Tasks.into(), parts, |part| part.id.as_bytes().to_vec())
     }
 
     pub fn get_task(&self, id: &str) -> Result<TransferTask, CloudError> {

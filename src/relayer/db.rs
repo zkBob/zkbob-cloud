@@ -18,12 +18,14 @@ impl Db {
         })
     }
 
-    pub fn save_txs(&mut self, txs: Vec<Transaction>) -> Result<(), CloudError> {
-        let kv = txs
-            .into_iter()
-            .map(|tx| (tx.index.to_be_bytes().to_vec(), tx))
-            .collect();
-        self.db.save_all(CacheDbColumn::Transactions.into(), kv)
+    pub fn save_txs<'a, I>(&mut self, txs: I) -> Result<(), CloudError>
+    where
+        I: Iterator<Item = &'a Transaction>,
+    {
+        self.db
+            .save_all(CacheDbColumn::Transactions.into(), txs, |tx| {
+                tx.index.to_be_bytes().to_vec()
+            })
     }
 
     pub fn get_txs(&self, offset: u64, limit: u64) -> Vec<Transaction> {
