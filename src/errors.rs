@@ -1,5 +1,6 @@
 use actix_http::StatusCode;
 use actix_web::{http::header::ContentType, HttpResponse, ResponseError};
+use hex::FromHexError;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -53,6 +54,8 @@ pub enum CloudError {
     TransactionStatusUnknown,
     #[error("failed to parse config")]
     ConfigError(String),
+    #[error("rpc error")]
+    Web3Error,
 }
 
 impl ResponseError for CloudError {
@@ -77,7 +80,7 @@ impl ResponseError for CloudError {
         let response = serde_json::to_string(&ErrorResponse {
             error: format!("{}", self),
         })
-        .unwrap();
+        .unwrap_or(self.to_string());
 
         HttpResponse::build(self.status_code())
             .insert_header(ContentType::json())
@@ -99,6 +102,12 @@ impl From<zkbob_utils_rs::relayer::error::RelayerError> for CloudError {
 
 impl From<zkbob_utils_rs::contracts::error::PoolError> for CloudError {
     fn from(e: zkbob_utils_rs::contracts::error::PoolError) -> Self {
+        Self::InternalError(e.to_string())
+    }
+}
+
+impl From<FromHexError> for CloudError {
+    fn from(e: FromHexError) -> Self {
         Self::InternalError(e.to_string())
     }
 }

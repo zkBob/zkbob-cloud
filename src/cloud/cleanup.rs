@@ -1,7 +1,8 @@
-use std::{sync::Arc, collections::HashMap};
+use std::{sync::Arc, collections::HashMap, thread, process};
 
 use tokio::sync::RwLock;
 use uuid::Uuid;
+use zkbob_utils_rs::tracing;
 
 use crate::account::Account;
 
@@ -26,5 +27,16 @@ impl Drop for AccountCleanup {
                 accounts.remove(&id);
             };
         });
+    }
+}
+
+pub struct WorkerCleanup;
+
+impl Drop for WorkerCleanup {
+    fn drop(&mut self) {
+        if thread::panicking() {
+            tracing::error!("panic in worker, stopping application");
+            process::exit(1);
+        }
     }
 }

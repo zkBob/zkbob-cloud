@@ -9,11 +9,12 @@ use zkbob_utils_rs::{tracing, relayer::types::{Proof, TransactionRequest}};
 
 use crate::{errors::CloudError, helpers::timestamp};
 
-use super::{ZkBobCloud, types::{TransferPart, TransferStatus}};
+use super::{ZkBobCloud, types::{TransferPart, TransferStatus}, cleanup::WorkerCleanup};
 
 pub(crate) fn run_send_worker(cloud: Data<ZkBobCloud>, max_attempts: u32) {
     thread::spawn( move || {
-        let rt = tokio::runtime::Runtime::new().unwrap();
+        let _cleanup = WorkerCleanup;
+        let rt = tokio::runtime::Runtime::new().expect("failed to init tokio runtime");
         rt.block_on(async move {
             let in_progress = Arc::new(RwLock::new(HashSet::new()));
             loop {

@@ -7,11 +7,12 @@ use zkbob_utils_rs::{tracing, relayer::types::JobResponse};
 
 use crate::{errors::CloudError, cloud::{send_worker::get_part, types::TransferStatus}, helpers::timestamp};
 
-use super::{ZkBobCloud, types::TransferPart};
+use super::{ZkBobCloud, types::TransferPart, cleanup::WorkerCleanup};
 
 pub(crate) fn run_status_worker(cloud: Data<ZkBobCloud>, max_attempts: u32) {
     thread::spawn( move || {
-        let rt = tokio::runtime::Runtime::new().unwrap();
+        let _cleanup = WorkerCleanup;
+        let rt = tokio::runtime::Runtime::new().expect("failed to init tokio runtime");
         rt.block_on(async move {
             let in_progress = Arc::new(RwLock::new(HashSet::new()));
             loop {
@@ -84,7 +85,15 @@ async fn process(cloud: &ZkBobCloud, id: &str, max_attempts: u32) -> ProcessResu
         }
     }
 
-    let response: Result<JobResponse, CloudError> = cloud.relayer.job(&part.job_id.clone().unwrap()).await;
+    let job_id = match part.job_id.as_ref() {
+        Some(job_id) => job_id,
+        None => {
+            tracing::error!("[status task: {}] task has status {:?} but doesn't contain job id, deleting task", id, part.status);
+            return ProcessResult::delete_from_queue();
+        }
+    };
+
+    let response: Result<JobResponse, CloudError> = cloud.relayer.job(job_id).await;
     match response {
         Ok(response) => {
             let status = TransferStatus::from_relayer_response(
@@ -94,12 +103,24 @@ async fn process(cloud: &ZkBobCloud, id: &str, max_attempts: u32) -> ProcessResu
 
             match status {
                 TransferStatus::Done => {
-                    let tx_hash = response.tx_hash.unwrap();
+                    let tx_hash = match response.tx_hash {
+                        Some(tx_hash) => tx_hash,
+                        None => {
+                            tracing::info!("[status task: {}] transfer status is done but tx hash is not found", id);
+                            return ProcessResult::error_with_retry_attempts(part, CloudError::RelayerSendError, max_attempts);
+                        }
+                    };
                     tracing::info!("[status task: {}] processed successfully, tx_hash: {}", id, &tx_hash);
                     ProcessResult::success(part, tx_hash)
                 }
                 TransferStatus::Mining => {
-                    let tx_hash = response.tx_hash.unwrap();
+                    let tx_hash = match response.tx_hash {
+                        Some(tx_hash) => tx_hash,
+                        None => {
+                            tracing::info!("[status task: {}] transfer status is done but tx hash is not found", id);
+                            return ProcessResult::error_with_retry_attempts(part, CloudError::RelayerSendError, max_attempts);
+                        }
+                    };
                     tracing::info!("[status task: {}] sent to contract, tx_hash: {}", id, &tx_hash);
                     ProcessResult::update_status(part, TransferStatus::Mining, tx_hash)
                 }

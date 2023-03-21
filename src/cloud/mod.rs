@@ -245,19 +245,13 @@ impl ZkBobCloud {
             .ok_or(CloudError::AccountNotFound)?;
 
         let mut accounts = self.accounts.write().await;
-
-        if accounts.contains_key(&id) {
-            return Ok((
-                accounts.get(&id).unwrap().clone(),
-                AccountCleanup::new(id, self.accounts.clone()),
-            ));
+        match accounts.get(&id) {
+            Some(account) => Ok((account.clone(), AccountCleanup::new(id, self.accounts.clone()))),
+            None => {
+                let account = Arc::new(Account::load(id, self.pool_id, &data.db_path)?);
+                accounts.insert(id, account.clone());
+                Ok((account, AccountCleanup::new(id, self.accounts.clone())))
+            }
         }
-
-        let account = Arc::new(Account::load(id, self.pool_id, &data.db_path)?);
-        accounts.insert(id, account.clone());
-        Ok((
-            account,
-            AccountCleanup::new(id, self.accounts.clone()),
-        ))
     }
 }

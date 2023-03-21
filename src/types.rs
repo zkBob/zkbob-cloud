@@ -1,7 +1,9 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
-use crate::{account::history::{HistoryTxType, HistoryTx}, cloud::types::{TransferPart, TransferStatus}};
-
+use crate::{
+    account::history::{HistoryTx, HistoryTxType},
+    cloud::types::{TransferPart, TransferStatus},
+};
 
 #[derive(Serialize, Deserialize)]
 pub struct SignupRequest {
@@ -90,7 +92,9 @@ impl HistoryRecord {
         txs.iter()
             .filter(|tx| tx.tx_type != HistoryTxType::AggregateNotes)
             .map(|tx| {
-                let fee = (tx.tx_type != HistoryTxType::TransferIn && tx.tx_type != HistoryTxType::DirectDeposit).then_some(tx.fee);
+                let fee = (tx.tx_type != HistoryTxType::TransferIn
+                    && tx.tx_type != HistoryTxType::DirectDeposit)
+                    .then_some(tx.fee);
 
                 match tx.transaction_id.clone() {
                     Some(request_id) => {
@@ -98,13 +102,14 @@ impl HistoryRecord {
                             .iter()
                             .filter(|tx| tx.transaction_id.as_ref() == Some(&request_id))
                             .filter(|tx| tx.tx_type == HistoryTxType::AggregateNotes);
-                        
+
                         let linked_tx_hashes = linked_txs
                             .clone()
                             .map(|linked_tx| linked_tx.tx_hash.clone())
                             .collect::<Vec<_>>();
 
-                        let linked_tx_hashes = (!linked_tx_hashes.is_empty()).then_some(linked_tx_hashes);
+                        let linked_tx_hashes =
+                            (!linked_tx_hashes.is_empty()).then_some(linked_tx_hashes);
 
                         let fee = fee.map(|fee| fee + linked_txs.map(|tx| tx.fee).sum::<u64>());
 
@@ -118,7 +123,7 @@ impl HistoryRecord {
                             to: tx.to.clone(),
                             transaction_id: Some(request_id),
                         }
-                    },
+                    }
                     None => HistoryRecord {
                         tx_type: tx.tx_type.clone(),
                         tx_hash: tx.tx_hash.clone(),
@@ -152,8 +157,10 @@ impl TransactionStatusResponse {
     pub fn from(parts: Vec<TransferPart>) -> Self {
         let mut tx_hashes = parts
             .iter()
-            .filter(|job| job.tx_hash.is_some() && job.status != TransferStatus::Mining)
-            .map(|job| job.tx_hash.clone().unwrap())
+            .filter_map(|part| match &part.tx_hash {
+                Some(tx_hash) if part.status != TransferStatus::Mining => Some(tx_hash.clone()),
+                _ => None,
+            })
             .collect::<Vec<_>>();
 
         let tx_hash = tx_hashes.pop();
@@ -166,11 +173,9 @@ impl TransactionStatusResponse {
                 TransferStatus::Failed(_) => {
                     let first_failed_part = &(*parts
                         .iter()
-                        .filter(|job| matches!(job.status, TransferStatus::Failed(_)))
-                        .collect::<Vec<_>>()
-                        .first()
+                        .find(|job| matches!(job.status, TransferStatus::Failed(_)))
                         .unwrap())
-                        .clone();
+                    .clone();
 
                     (
                         first_failed_part.status.status(),
@@ -184,8 +189,12 @@ impl TransactionStatusResponse {
                         .filter(|job| job.status != TransferStatus::New)
                         .last();
                     match relevant_part {
-                        Some(relevant_part) => (TransferStatus::Relaying.status(), relevant_part.timestamp, None),
-                        None => (TransferStatus::New.status(), parts[0].timestamp, None)
+                        Some(relevant_part) => (
+                            TransferStatus::Relaying.status(),
+                            relevant_part.timestamp,
+                            None,
+                        ),
+                        None => (TransferStatus::New.status(), parts[0].timestamp, None),
                     }
                 }
             }

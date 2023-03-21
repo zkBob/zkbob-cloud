@@ -68,14 +68,12 @@ impl CachedRelayerClient {
         };
         let offset = offset + 128 * cached.len() as u64;
         let limit = limit - cached.len() as u64;
-        tracing::info!("cached: {}", cached.len());
 
         if limit == 0 {
             return Ok(cached);
         }
 
         let fetched = self.client.transactions(offset, limit).await?;
-        tracing::info!("fetched: {}", fetched.len());
 
         let mut result = cached;
         for (i, tx) in fetched.into_iter().enumerate() {
@@ -83,9 +81,9 @@ impl CachedRelayerClient {
             let optimistic = &tx[0..1] != "1";
             let tx_hash = format!("0x{}", &tx[1..65]);
             let commitment: Num<Fr> = Num::from_uint_reduced(NumRepr(Uint::from_big_endian(
-                &hex::decode(&tx[65..129]).unwrap(),
+                &hex::decode(&tx[65..129])?,
             )));
-            let memo = hex::decode(&tx[129..]).unwrap();
+            let memo = hex::decode(&tx[129..])?;
 
             let tx = Transaction {
                 index,

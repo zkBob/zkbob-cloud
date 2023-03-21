@@ -9,20 +9,12 @@ use crate::errors::CloudError;
 use super::db::Db;
 
 #[derive(Serialize, Deserialize, Debug)]
-pub enum Web3TxType {
-    Deposit = 0,
-    Transfer = 1,
-    Withdrawal = 2,
-    DepositPermittable = 3,
-    DirectDeposit = 4,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct TxWeb3Info {
-    pub tx_type: Web3TxType,
-    pub timestamp: u64,
-    pub fee: u64,
-    pub token_amount: Option<i128>,
+pub enum TxWeb3Info {
+    Deposit(u64, u64, i128),
+    Transfer(u64, u64, i128),
+    Withdrawal(u64, u64, i128),
+    DepositPermittable(u64, u64, i128),
+    DirectDeposit(u64, u64),
 }
 
 pub struct CachedWeb3Client {
@@ -59,46 +51,39 @@ impl CachedWeb3Client {
     }
     
     async fn fetch_web3_info(&self, tx_hash: &str) -> Result<TxWeb3Info, CloudError> {
-        let tx_hash: H256 = H256::from_slice(&hex::decode(&tx_hash[2..]).unwrap());
+        let tx_hash: H256 = H256::from_slice(&hex::decode(&tx_hash[2..])?);
         let tx = self.pool
             .get_transaction(tx_hash)
             .await?
             .ok_or(CloudError::InternalError(
                 "transaction not found".to_string(),
             ))?;
-    
-        let calldata = ParsedCalldata::new(tx.input.0, None).expect("Calldata is invalid!");
-        let (tx_type, fee, token_amount) = match calldata.content {
-            CalldataContent::Transact(calldata) => {
-                let fee = calldata.memo.fee;
-                let tx_type = match calldata.tx_type {
-                    TxType::Deposit => Web3TxType::Deposit,
-                    TxType::Transfer => Web3TxType::Transfer,
-                    TxType::Withdrawal => Web3TxType::Withdrawal,
-                    TxType::DepositPermittable => Web3TxType::DepositPermittable,
-                };
-                Ok((tx_type, fee, Some(calldata.token_amount)))
-            }
-            CalldataContent::AppendDirectDeposit(_) => {
-                let fee = self.dd.fee().await?;
-                Ok((Web3TxType::DirectDeposit, fee, None))
-            }
-            _ => Err(CloudError::InternalError("unknown tx".to_string())),
-        }?;
-    
+
+        let block_number = tx.block_number.ok_or(CloudError::Web3Error)?;
         let timestamp = self.pool
-            .block_timestamp(tx.block_number.unwrap())
+            .block_timestamp(block_number)
             .await?
             .ok_or(CloudError::InternalError(
                 "failed to fetch timestamp".to_string(),
             ))?
             .as_u64();
     
-        Ok(TxWeb3Info {
-            tx_type,
-            timestamp,
-            fee,
-            token_amount,
-        })
+        let calldata = ParsedCalldata::new(tx.input.0, None).expect("Calldata is invalid!");
+        match calldata.content {
+            CalldataContent::Transact(calldata) => {
+                let fee = calldata.memo.fee;
+                match calldata.tx_type {
+                    TxType::Deposit => Ok(TxWeb3Info::Deposit(timestamp, fee, calldata.token_amount)),
+                    TxType::Transfer => Ok(TxWeb3Info::Transfer(timestamp, fee, calldata.token_amount)),
+                    TxType::Withdrawal => Ok(TxWeb3Info::Withdrawal(timestamp, fee, calldata.token_amount)),
+                    TxType::DepositPermittable => Ok(TxWeb3Info::DepositPermittable(timestamp, fee, calldata.token_amount)),
+                }
+            }
+            CalldataContent::AppendDirectDeposit(_) => {
+                let fee = self.dd.fee().await?;
+                Ok(TxWeb3Info::DirectDeposit(timestamp, fee))
+            }
+            _ => Err(CloudError::InternalError("unknown tx".to_string())),
+        }
     }
 }
