@@ -4,7 +4,7 @@ use zkbob_utils_rs::tracing;
 
 use crate::{errors::CloudError, helpers::db::KeyValueDb};
 
-use super::types::{TransferPart, TransferTask};
+use super::types::{TransferPart, TransferTask, ReportTask};
 
 pub(crate) struct Db {
     db_path: String,
@@ -81,16 +81,29 @@ impl Db {
             .get(CloudDbColumn::Tasks.into(), id.as_bytes())?
             .ok_or(CloudError::InternalError("task part not found in db".to_string()))
     }
+
+    pub fn save_report_task(&mut self, id: Uuid, task: &ReportTask) -> Result<(), CloudError> {
+        self.db.save(CloudDbColumn::Reports.into(), id.as_bytes(), task)
+    }
+
+    pub fn get_report_task(&self, id: Uuid) -> Result<Option<ReportTask>, CloudError> {
+        self.db.get(CloudDbColumn::Reports.into(), id.as_bytes())
+    }
+
+    pub fn clean_reports(&mut self) -> Result<(), CloudError> {
+        self.db.delete_all(CloudDbColumn::Reports.into())
+    }
 }
 
 pub enum CloudDbColumn {
     Accounts,
     Tasks,
+    Reports,
 }
 
 impl CloudDbColumn {
     pub fn count() -> u32 {
-        2
+        3
     }
 }
 

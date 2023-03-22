@@ -5,7 +5,7 @@ use actix_web_httpauth::extractors::bearer::BearerAuth;
 use uuid::Uuid;
 use zkbob_utils_rs::tracing;
 
-use crate::{errors::CloudError, types::{SignupRequest, SignupResponse, AccountInfoRequest, GenerateAddressResponse, TransferRequest, TransferResponse, TransactionStatusRequest, CalculateFeeRequest, CalculateFeeResponse, ExportKeyResponse, HistoryRecord, TransactionStatusResponse}, cloud::{ZkBobCloud, types::Transfer}};
+use crate::{errors::CloudError, types::{SignupRequest, SignupResponse, AccountInfoRequest, GenerateAddressResponse, TransferRequest, TransferResponse, TransactionStatusRequest, CalculateFeeRequest, CalculateFeeResponse, ExportKeyResponse, HistoryRecord, TransactionStatusResponse, ReportRequest, ReportResponse}, cloud::{ZkBobCloud, types::Transfer}};
 
 pub async fn signup(
     request: Json<SignupRequest>,
@@ -54,7 +54,7 @@ pub async fn account_info(
     request: Query<AccountInfoRequest>,
     cloud: Data<ZkBobCloud>,
 ) -> Result<HttpResponse, CloudError> {
-    let account_id = parse_account_id(&request.id)?;
+    let account_id = parse_uuid(&request.id)?;
     let account_info = cloud
         .account_info(account_id)
         .await?;
@@ -65,7 +65,7 @@ pub async fn generate_shielded_address(
     request: Query<AccountInfoRequest>,
     cloud: Data<ZkBobCloud>,
 ) -> Result<HttpResponse, CloudError> {
-    let account_id = parse_account_id(&request.id)?;
+    let account_id = parse_uuid(&request.id)?;
     let address = cloud.generate_address(account_id).await?;
     Ok(HttpResponse::Ok().json(GenerateAddressResponse { address }))
 }
@@ -74,7 +74,7 @@ pub async fn history(
     request: Query<AccountInfoRequest>,
     cloud: Data<ZkBobCloud>,
 ) -> Result<HttpResponse, CloudError> {
-    let account_id = parse_account_id(&request.id)?;
+    let account_id = parse_uuid(&request.id)?;
     let txs = cloud.history(account_id).await?;
     Ok(HttpResponse::Ok().json(HistoryRecord::prepare_records(txs)))
 }
@@ -83,7 +83,7 @@ pub async fn transfer(
     request: Json<TransferRequest>,
     cloud: Data<ZkBobCloud>,
 ) -> Result<HttpResponse, CloudError> {
-    let account_id = parse_account_id(&request.account_id)?;
+    let account_id = parse_uuid(&request.account_id)?;
 
     let request_id = cloud.transfer(Transfer{
         id: request.request_id.clone().unwrap_or(Uuid::new_v4().as_hyphenated().to_string()),
@@ -117,7 +117,7 @@ pub async fn calculate_fee(
     request: Json<CalculateFeeRequest>,
     cloud: Data<ZkBobCloud>
 ) -> Result<HttpResponse, CloudError> {
-    let account_id = parse_account_id(&request.account_id)?;
+    let account_id = parse_uuid(&request.account_id)?;
     let (transaction_count, total_fee) = cloud.calculate_fee(account_id, request.amount).await?;
     Ok(HttpResponse::Ok().json(CalculateFeeResponse{transaction_count, total_fee}))
 }
@@ -128,14 +128,53 @@ pub async fn export_key(
     bearer: BearerAuth,
 ) -> Result<HttpResponse, CloudError> {
     cloud.validate_token(bearer.token())?;
-    let account_id = parse_account_id(&request.id)?;
+    let account_id = parse_uuid(&request.id)?;
     let sk = cloud.export_key(account_id).await?;
     Ok(HttpResponse::Ok().json(ExportKeyResponse { sk }))
 }
 
-fn parse_account_id(account_id: &str) -> Result<Uuid, CloudError> {
+pub async fn generate_report(
+    cloud: Data<ZkBobCloud>,
+    bearer: BearerAuth,
+) -> Result<HttpResponse, CloudError> {
+    cloud.validate_token(bearer.token())?;
+    let (id, task) = cloud.generate_report().await?;
+    Ok(HttpResponse::Ok().json(ReportResponse {
+        id: id.as_hyphenated().to_string(),
+        status: task.status,
+        report: task.report,
+    }))
+}
+
+pub async fn report(
+    request: Query<ReportRequest>,
+    cloud: Data<ZkBobCloud>,
+    bearer: BearerAuth,
+) -> Result<HttpResponse, CloudError> {
+    cloud.validate_token(bearer.token())?;
+    let report_id = parse_uuid(&request.id)?;
+    match cloud.get_report(report_id).await? {
+        Some(task) => Ok(HttpResponse::Ok().json(ReportResponse {
+            id: report_id.as_hyphenated().to_string(),
+            status: task.status,
+            report: task.report,
+        })),
+        None => Err(CloudError::ReportNotFound)
+    }
+}
+
+pub async fn clean_reports(
+    cloud: Data<ZkBobCloud>,
+    bearer: BearerAuth,
+) -> Result<HttpResponse, CloudError> {
+    cloud.validate_token(bearer.token())?;
+    cloud.clean_reports().await?;
+    Ok(HttpResponse::Ok().finish())
+}
+
+fn parse_uuid(account_id: &str) -> Result<Uuid, CloudError> {
     Uuid::from_str(account_id).map_err(|err| {
-        tracing::debug!("failed to parse account id: {}", err);
+        tracing::debug!("failed to parse uuid: {}", err);
         CloudError::IncorrectAccountId
     })
 }

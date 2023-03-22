@@ -1,11 +1,11 @@
-use std::{thread, time::Duration, str::FromStr, sync::Arc, collections::HashSet};
+use std::{thread, str::FromStr, sync::Arc, collections::HashSet};
 
 use actix_web::web::Data;
-use tokio::{time, sync::RwLock};
+use tokio::{sync::RwLock};
 use uuid::Uuid;
 use zkbob_utils_rs::{tracing, relayer::types::JobResponse};
 
-use crate::{errors::CloudError, cloud::{send_worker::get_part, types::TransferStatus}, helpers::timestamp};
+use crate::{errors::CloudError, cloud::{send_worker::get_part, types::TransferStatus}, helpers::{timestamp, queue::receive_blocking}};
 
 use super::{ZkBobCloud, types::TransferPart, cleanup::WorkerCleanup};
 
@@ -16,51 +16,32 @@ pub(crate) fn run_status_worker(cloud: Data<ZkBobCloud>, max_attempts: u32) {
         rt.block_on(async move {
             let in_progress = Arc::new(RwLock::new(HashSet::new()));
             loop {
-                let task = {
-                    let mut status_queue = cloud.status_queue.write().await;
-                    status_queue.receive::<String>().await
-                };
-                match task {
-                    Ok(Some((redis_id, id))) => {
-                        if !in_progress.write().await.insert(redis_id.clone()) {
-                            continue;
-                        }
+                let (redis_id, id) = receive_blocking::<String>(cloud.status_queue.clone()).await;
 
-                        let in_progress = in_progress.clone();
-                        let cloud = cloud.clone();
-                        tokio::spawn(async move {
-                            let process_result = process(&cloud, &id, max_attempts).await;
-                            if postprocessing(&cloud, &process_result).await.is_err() {
-                                in_progress.write().await.remove(&redis_id);
-                                return;
-                            }
-                            
-                            if process_result.delete {
-                                let mut status_queue = cloud.status_queue.write().await;
-                                if let Err(err) = status_queue.delete(&redis_id).await {
-                                    tracing::error!("[status task: {}] failed to delete task from queue: {}", &id, err);
-                                    in_progress.write().await.remove(&redis_id);
-                                    return;
-                                }
-                            }
+                if !in_progress.write().await.insert(redis_id.clone()) {
+                    continue;
+                }
 
-                            in_progress.write().await.remove(&redis_id);
-                        });
-                    },
-                    Ok(None) => {
-                        time::sleep(Duration::from_millis(500)).await;
-                    },
-                    Err(_) => {
+                let in_progress = in_progress.clone();
+                let cloud = cloud.clone();
+                tokio::spawn(async move {
+                    let process_result = process(&cloud, &id, max_attempts).await;
+                    if postprocessing(&cloud, &process_result).await.is_err() {
+                        in_progress.write().await.remove(&redis_id);
+                        return;
+                    }
+                    
+                    if process_result.delete {
                         let mut status_queue = cloud.status_queue.write().await;
-                        match status_queue.reconnect().await {
-                            Ok(_) => tracing::info!("connection to redis reestablished"),
-                            Err(_) => {
-                                time::sleep(Duration::from_millis(5000)).await;
-                            }
+                        if let Err(err) = status_queue.delete(&redis_id).await {
+                            tracing::error!("[status task: {}] failed to delete task from queue: {}", &id, err);
+                            in_progress.write().await.remove(&redis_id);
+                            return;
                         }
                     }
-                }
-                time::sleep(Duration::from_millis(500)).await;
+
+                    in_progress.write().await.remove(&redis_id);
+                });
             }
         });
     });

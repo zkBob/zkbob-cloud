@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     account::history::{HistoryTx, HistoryTxType},
-    cloud::types::{TransferPart, TransferStatus},
+    cloud::types::{TransferPart, TransferStatus, ReportStatus, Report},
 };
 
 #[derive(Serialize, Deserialize)]
@@ -21,6 +21,18 @@ pub struct SignupResponse {
 #[derive(Deserialize)]
 pub struct AccountInfoRequest {
     pub id: String,
+}
+
+#[derive(Deserialize)]
+pub struct ReportRequest {
+    pub id: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct ReportResponse {
+    pub id: String,
+    pub status: ReportStatus,
+    pub report: Option<Report>,
 }
 
 #[derive(Serialize, Deserialize)]

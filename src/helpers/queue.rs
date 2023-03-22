@@ -1,5 +1,8 @@
+use std::{time::Duration, sync::Arc};
+
 use rsmq_async::{Rsmq, RsmqConnection};
 use serde::{de::DeserializeOwned, Serialize};
+use tokio::{time, sync::RwLock};
 use zkbob_utils_rs::tracing;
 
 use crate::errors::CloudError;
@@ -111,5 +114,31 @@ impl Queue {
         })?;
 
         Ok(Rsmq::new_with_connection(Default::default(), connection))
+    }
+}
+
+pub async fn receive_blocking<T: DeserializeOwned>(
+    queue: Arc<RwLock<Queue>>,
+) -> (String, T) {
+    loop {
+        let task = {
+            queue.write().await.receive::<T>().await
+        };
+        match task {
+            Ok(Some(task)) => {
+                return task;
+            },
+            Ok(None) => {
+                time::sleep(Duration::from_millis(500)).await;
+            },
+            Err(_) => {
+                match queue.write().await.reconnect().await {
+                    Ok(_) => tracing::info!("connection to redis reestablished"),
+                    Err(_) => {
+                        time::sleep(Duration::from_millis(5000)).await;
+                    }
+                }
+            }
+        };
     }
 }

@@ -84,3 +84,37 @@ pub struct TransferTask {
     pub request_id: String,
     pub parts: Vec<String>
 }
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountReport {
+    pub id: String,
+    pub description: String,
+    pub balance: u64,
+    pub max_transfer_amount: u64,
+    pub address: String,
+    pub sk: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct Report {
+    pub timestamp: u64,
+    pub pool_index: u64,
+    pub account: Vec<AccountReport>
+}
+
+
+#[derive(Serialize, Deserialize, Debug)]
+pub enum ReportStatus {
+    New,
+    Completed,
+    Failed,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ReportTask {
+    pub status: ReportStatus,
+    pub attempt: u32,
+    pub report: Option<Report>,
+}

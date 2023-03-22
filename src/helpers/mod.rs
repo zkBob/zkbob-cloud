@@ -5,6 +5,7 @@ use libzkbob_rs::libzeropool::fawkes_crypto::ff_uint::Num;
 use crate::Fr;
 
 pub mod db;
+pub mod queue;
 
 pub trait AsU64Amount {
     fn as_u64_amount(&self) -> u64;

@@ -1,13 +1,13 @@
-use std::{time::Duration, thread, str::FromStr, sync::Arc, collections::HashSet};
+use std::{thread, str::FromStr, sync::Arc, collections::HashSet};
 
 use actix_web::web::Data;
 use libzkbob_rs::proof::prove_tx;
 use memo_parser::calldata::transact::memo::TxType;
-use tokio::{sync::RwLock, time, task};
+use tokio::{sync::RwLock, task};
 use uuid::Uuid;
 use zkbob_utils_rs::{tracing, relayer::types::{Proof, TransactionRequest}};
 
-use crate::{errors::CloudError, helpers::timestamp};
+use crate::{errors::CloudError, helpers::{timestamp, queue::receive_blocking}};
 
 use super::{ZkBobCloud, types::{TransferPart, TransferStatus}, cleanup::WorkerCleanup};
 
@@ -18,60 +18,42 @@ pub(crate) fn run_send_worker(cloud: Data<ZkBobCloud>, max_attempts: u32) {
         rt.block_on(async move {
             let in_progress = Arc::new(RwLock::new(HashSet::new()));
             loop {
-                let task = {
-                    let mut send_queue = cloud.send_queue.write().await;
-                    send_queue.receive::<String>().await
-                };
-                match task {
-                    Ok(Some((redis_id, id))) => {
-                        if !in_progress.write().await.insert(redis_id.clone()) {
-                            continue;
-                        }
-                        let cloud = cloud.clone();
-                        let in_progress = in_progress.clone();
-                        tokio::spawn(async move {
-                            let process_result = process(&cloud, &id, max_attempts).await;
-                            if let Some(update) = process_result.update {
-                                if let Err(err) = cloud.db.write().await.save_part(&update) {
-                                    tracing::error!("[send task: {}] failed to save processed task in db: {}", &id, err);
-                                    in_progress.write().await.remove(&redis_id);
-                                    return;
-                                }
-                            }
-    
-                            if process_result.check_status {
-                                if let Err(err) = cloud.status_queue.write().await.send(id.clone()).await {
-                                    tracing::error!("[send task: {}] failed to send task to check status queue: {}", &id, err);
-                                    in_progress.write().await.remove(&redis_id);
-                                    return;
-                                }
-                            }
-                            
-                            if process_result.delete {
-                                let mut send_queue = cloud.send_queue.write().await;
-                                if let Err(err) = send_queue.delete(&redis_id).await {
-                                    tracing::error!("[send task: {}] failed to delete task from queue: {}", &id, err);
-                                    in_progress.write().await.remove(&redis_id);
-                                    return;
-                                }
-                            }
-    
+                let (redis_id, id) = receive_blocking::<String>(cloud.send_queue.clone()).await;
+
+                if !in_progress.write().await.insert(redis_id.clone()) {
+                    continue;
+                }
+                let cloud = cloud.clone();
+                let in_progress = in_progress.clone();
+                tokio::spawn(async move {
+                    let process_result = process(&cloud, &id, max_attempts).await;
+                    if let Some(update) = process_result.update {
+                        if let Err(err) = cloud.db.write().await.save_part(&update) {
+                            tracing::error!("[send task: {}] failed to save processed task in db: {}", &id, err);
                             in_progress.write().await.remove(&redis_id);
-                        });
-                    },
-                    Ok(None) => {
-                        time::sleep(Duration::from_millis(500)).await;
-                    },
-                    Err(_) => {
-                        let mut send_queue = cloud.send_queue.write().await;
-                        match send_queue.reconnect().await {
-                            Ok(_) => tracing::info!("connection to redis reestablished"),
-                            Err(_) => {
-                                time::sleep(Duration::from_millis(5000)).await;
-                            }
+                            return;
                         }
                     }
-                }
+
+                    if process_result.check_status {
+                        if let Err(err) = cloud.status_queue.write().await.send(id.clone()).await {
+                            tracing::error!("[send task: {}] failed to send task to check status queue: {}", &id, err);
+                            in_progress.write().await.remove(&redis_id);
+                            return;
+                        }
+                    }
+                    
+                    if process_result.delete {
+                        let mut send_queue = cloud.send_queue.write().await;
+                        if let Err(err) = send_queue.delete(&redis_id).await {
+                            tracing::error!("[send task: {}] failed to delete task from queue: {}", &id, err);
+                            in_progress.write().await.remove(&redis_id);
+                            return;
+                        }
+                    }
+
+                    in_progress.write().await.remove(&redis_id);
+                });
             }
         })        
     });
