@@ -30,7 +30,7 @@ pub struct Account {
 }
 
 impl Account {
-    pub async fn new(
+    pub fn new(
         id: Uuid,
         description: String,
         sk: Option<Vec<u8>>,
@@ -206,12 +206,9 @@ impl Account {
         for memo in memos {
             let tx_hash = memo.tx_hash.as_ref().unwrap();
             let info = web3.get_web3_info(tx_hash).await?;
-            let transaction_id = {
-                self.db.read().await.get_transaction_id(tx_hash)?
-            };
             
             let account = memo.acc;
-            history.append(&mut HistoryTx::parse(memo, info, transaction_id, last_account));
+            history.append(&mut HistoryTx::parse(memo, info, last_account));
 
             if let Some(acc) = account {
                 last_account = Some(acc);
@@ -254,10 +251,6 @@ impl Account {
         }
 
         max_amount.as_u64_amount()
-    }
-
-    pub async fn save_transaction_id(&self, tx_hash: &str, transaction_id: &str) -> Result<(), CloudError> {
-        self.db.write().await.save_transaction_id(tx_hash, transaction_id)
     }
 
     async fn get_optimistic_state(&self, relayer: &CachedRelayerClient) -> Result<StateFragment<Fr>, CloudError> {

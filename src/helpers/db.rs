@@ -189,6 +189,25 @@ impl KeyValueDb {
         })
     }
 
+    pub fn delete(&mut self, column: u32, key: &[u8]) -> Result<(), CloudError> {
+        self.db
+            .write({
+                let mut tx = self.db.transaction();
+                tx.delete(column, key);
+                tx
+            })
+            .map_err(|err| {
+                tracing::error!(
+                    "failed to delete value [{}, {:?}] from db: [{}] with err: {:?}",
+                    column,
+                    key,
+                    self.path,
+                    err
+                );
+                CloudError::DataBaseWriteError("failed to delete value".to_string())
+            })
+    }
+
     pub fn delete_all(&mut self, column: u32) -> Result<(), CloudError> {
         self.db.write({
             let mut transaction = self.db.transaction();

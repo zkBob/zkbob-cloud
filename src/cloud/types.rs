@@ -2,13 +2,56 @@ use libzkbob_rs::libzeropool::fawkes_crypto::ff_uint::Num;
 use serde::{Serialize, Deserialize};
 use uuid::Uuid;
 
-use crate::{Fr, errors::CloudError};
+use crate::{Fr, errors::CloudError, account::history::{HistoryTxType, HistoryTx}};
+
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct AccountData {
+    pub description: String,
+    pub db_path: String,
+    pub sk: String,
+}
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AccountShortInfo {
     pub id: String,
     pub description: String,
+    pub sk: String,
+}
+
+pub struct AccountImportData {
+    pub id: Uuid,
+    pub description: String,
+    pub sk: Vec<u8>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CloudHistoryTx {
+    pub tx_type: HistoryTxType,
+    pub tx_hash: String,
+    pub timestamp: u64,
+    pub amount: u64,
+    pub fee: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub to: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transaction_id: Option<String>,
+}
+
+impl CloudHistoryTx {
+    pub fn new(record: HistoryTx, transaction_id: Option<String>) -> CloudHistoryTx {
+        CloudHistoryTx {
+            tx_type: record.tx_type,
+            tx_hash: record.tx_hash,
+            timestamp: record.timestamp,
+            amount: record.amount,
+            fee: record.fee,
+            to: record.to,
+            transaction_id,
+        }
+    }
 }
 
 pub struct Transfer {
@@ -101,7 +144,7 @@ pub struct AccountReport {
 pub struct Report {
     pub timestamp: u64,
     pub pool_index: u64,
-    pub account: Vec<AccountReport>
+    pub accounts: Vec<AccountReport>
 }
 
 

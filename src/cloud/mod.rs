@@ -9,16 +9,13 @@ use std::{collections::HashMap, sync::Arc};
 
 use actix_web::web::Data;
 use libzkbob_rs::libzeropool::fawkes_crypto::{backend::bellman_groth16::Parameters, ff_uint::Num};
-use tokio::sync::RwLock;
+use tokio::{sync::RwLock, fs};
 use uuid::Uuid;
 use zkbob_utils_rs::{contracts::pool::Pool, tracing};
 
 use crate::{
-    account::{history::HistoryTx, types::AccountInfo, Account},
-    cloud::{
-        db::AccountData,
-        types::{TransferPart, TransferStatus, TransferTask},
-    },
+    account::{types::AccountInfo, Account},
+    cloud::types::{TransferPart, TransferStatus, TransferTask, AccountData},
     config::Config,
     errors::CloudError,
     helpers::{timestamp, queue::Queue},
@@ -27,7 +24,7 @@ use crate::{
     Engine, Fr,
 };
 
-use self::{db::Db, send_worker::run_send_worker, status_worker::run_status_worker, types::{AccountShortInfo, Transfer, ReportTask, ReportStatus}, cleanup::AccountCleanup, report_worker::run_report_worker};
+use self::{db::Db, send_worker::run_send_worker, status_worker::run_status_worker, types::{AccountShortInfo, Transfer, ReportTask, ReportStatus, AccountImportData, CloudHistoryTx}, cleanup::AccountCleanup, report_worker::run_report_worker};
 
 pub struct ZkBobCloud {
     pub(crate) config: Data<Config>,
@@ -105,18 +102,48 @@ impl ZkBobCloud {
         sk: Option<Vec<u8>>,
     ) -> Result<Uuid, CloudError> {
         let id = id.unwrap_or(uuid::Uuid::new_v4());
+        if self.db.read().await.account_exists(id)? {
+            return Err(CloudError::DuplicateAccountId);
+        }
+
         let db_path = self.db.read().await.account_db_path(id);
-        let account = Account::new(id, description.clone(), sk, self.pool_id, &db_path).await?;
+        let account = Account::new(id, description.clone(), sk, self.pool_id, &db_path)?;
         let id = account.id;
         self.db.write().await.save_account(
             id,
             &AccountData {
                 db_path,
                 description,
+                sk: account.export_key().await?,
             },
         )?;
         tracing::info!("created a new account: {}", id);
         Ok(id)
+    }
+
+    pub async fn import_accounts(&self, accounts: Vec<AccountImportData>) -> Result<(), CloudError> {
+        for account in accounts {
+            self.new_account(account.description, Some(account.id), Some(account.sk)).await?;
+        }
+        Ok(())
+    }
+
+    pub async fn delete_account(&self, id: Uuid) -> Result<(), CloudError> {
+        let data = self.db.read().await
+            .get_account(id)?
+            .ok_or(CloudError::AccountNotFound)?;
+
+        let accounts = self.accounts.write().await;
+        if accounts.get(&id).is_some() {
+            return Err(CloudError::AccountIsBusy);
+        }
+
+        fs::remove_dir_all(&data.db_path).await.map_err(|err| {
+            tracing::warn!("failed to delete account data: {}", err);
+            CloudError::InternalError("failed to delete account data".to_string())
+        })?;
+
+        self.db.write().await.delete_account(id)
     }
 
     pub async fn list_accounts(&self) -> Result<Vec<AccountShortInfo>, CloudError> {
@@ -129,6 +156,7 @@ impl ZkBobCloud {
             .map(|(id, data)| AccountShortInfo {
                 id: id.as_hyphenated().to_string(),
                 description: data.description,
+                sk: data.sk,
             })
             .collect())
     }
@@ -146,12 +174,17 @@ impl ZkBobCloud {
         Ok(address)
     }
 
-    pub async fn history(&self, id: Uuid) -> Result<Vec<HistoryTx>, CloudError> {
+    pub async fn history(&self, id: Uuid) -> Result<Vec<CloudHistoryTx>, CloudError> {
         let (account, _cleanup) = self.get_account(id).await?;
         account.sync(&self.relayer, None).await?;
         // TODO: optimistic history?
-        let history = account.history(&self.web3).await;
-        history
+        let history = account.history(&self.web3).await?;
+        let mut result = vec![];
+        for record in history {
+            let transaction_id = self.db.read().await.get_transaction_id(&record.tx_hash)?;
+            result.push(CloudHistoryTx::new(record, transaction_id));
+        }
+        Ok(result)
     }
 
     pub async fn calculate_fee(&self, id: Uuid, amount: u64) -> Result<(u64, u64), CloudError> {
@@ -270,7 +303,11 @@ impl ZkBobCloud {
         match accounts.get(&id) {
             Some(account) => Ok((account.clone(), AccountCleanup::new(id, self.accounts.clone()))),
             None => {
-                let account = Arc::new(Account::load(id, self.pool_id, &data.db_path)?);
+                let account = Account::load(id, self.pool_id, &data.db_path).or_else(|_| {
+                    let sk = hex::decode(data.sk)?;
+                    Account::new(id, data.description, Some(sk), self.pool_id, &data.db_path)
+                })?;
+                let account = Arc::new(account);
                 accounts.insert(id, account.clone());
                 Ok((account, AccountCleanup::new(id, self.accounts.clone())))
             }

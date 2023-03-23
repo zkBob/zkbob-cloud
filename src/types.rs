@@ -1,16 +1,25 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    account::history::{HistoryTx, HistoryTxType},
-    cloud::types::{TransferPart, TransferStatus, ReportStatus, Report},
+    account::history::HistoryTxType,
+    cloud::types::{TransferPart, TransferStatus, ReportStatus, Report, CloudHistoryTx},
 };
 
 #[derive(Serialize, Deserialize)]
 pub struct SignupRequest {
     pub id: Option<String>,
-    pub sk: Option<String>,
     pub description: String,
+    pub sk: Option<String>,
 }
+
+#[derive(Deserialize)]
+pub struct ImportRequestItem {
+    pub id: String,
+    pub description: String,
+    pub sk: String,
+}
+
+pub type ImportRequest = Vec<ImportRequestItem>;
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -100,7 +109,7 @@ pub struct HistoryRecord {
 }
 
 impl HistoryRecord {
-    pub fn prepare_records(txs: Vec<HistoryTx>) -> Vec<HistoryRecord> {
+    pub fn prepare_records(txs: Vec<CloudHistoryTx>) -> Vec<HistoryRecord> {
         txs.iter()
             .filter(|tx| tx.tx_type != HistoryTxType::AggregateNotes)
             .map(|tx| {

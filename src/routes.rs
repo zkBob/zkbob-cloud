@@ -5,7 +5,7 @@ use actix_web_httpauth::extractors::bearer::BearerAuth;
 use uuid::Uuid;
 use zkbob_utils_rs::tracing;
 
-use crate::{errors::CloudError, types::{SignupRequest, SignupResponse, AccountInfoRequest, GenerateAddressResponse, TransferRequest, TransferResponse, TransactionStatusRequest, CalculateFeeRequest, CalculateFeeResponse, ExportKeyResponse, HistoryRecord, TransactionStatusResponse, ReportRequest, ReportResponse}, cloud::{ZkBobCloud, types::Transfer}};
+use crate::{errors::CloudError, types::{SignupRequest, SignupResponse, AccountInfoRequest, GenerateAddressResponse, TransferRequest, TransferResponse, TransactionStatusRequest, CalculateFeeRequest, CalculateFeeResponse, ExportKeyResponse, HistoryRecord, TransactionStatusResponse, ReportRequest, ReportResponse, ImportRequest}, cloud::{ZkBobCloud, types::{Transfer, AccountImportData}}, helpers::invert};
 
 pub async fn signup(
     request: Json<SignupRequest>,
@@ -14,31 +14,43 @@ pub async fn signup(
 ) -> Result<HttpResponse, CloudError> {
     cloud.validate_token(bearer.token())?;
 
-    let id = match request.0.id {
-        Some(id) => {
-            Some(Uuid::from_str(&id).map_err(|_| {
-                CloudError::IncorrectAccountId
-            })?)
-        },
-        None => None
-    };
-
-    let sk = match request.0.sk {
-        Some(sk) => {
-            let sk = hex::decode(sk)
-                    .map_err(|err| CloudError::BadRequest(format!("failed to parse sk: {}", err)))?;
-                
-            sk.try_into()
-                .map_err(|_| CloudError::BadRequest("failed to parse sk".to_string()))?
-        },
-        None => None
-    };
+    let id = invert(request.id.as_ref().map(|id| parse_uuid(id)))?;
+    let sk = invert(request.sk.as_ref().map(hex::decode))?;
     
     let account_id = cloud.new_account(request.0.description, id, sk).await?;
 
     Ok(HttpResponse::Ok().json(SignupResponse {
         account_id: account_id.to_string(),
     }))
+}
+
+pub async fn import(
+    request: Json<ImportRequest>,
+    cloud: Data<ZkBobCloud>,
+    bearer: BearerAuth
+) -> Result<HttpResponse, CloudError> {
+    cloud.validate_token(bearer.token())?;
+    let accounts = request.iter().map(|account| {
+        Ok(AccountImportData {
+            id: parse_uuid(&account.id)?,
+            description: account.description.clone(),
+            sk: hex::decode(&account.sk)?
+        })
+    }).collect::<Result<Vec<_>, CloudError>>()?;
+    
+    cloud.import_accounts(accounts).await?;
+    Ok(HttpResponse::Ok().finish())
+}
+
+pub async fn delete_account(
+    request: Query<AccountInfoRequest>,
+    cloud: Data<ZkBobCloud>,
+    bearer: BearerAuth,
+) -> Result<HttpResponse, CloudError> {
+    cloud.validate_token(bearer.token())?;
+    let id = parse_uuid(&request.id)?;
+    cloud.delete_account(id).await?;
+    Ok(HttpResponse::Ok().finish())
 }
 
 pub async fn list_accounts(
@@ -172,8 +184,8 @@ pub async fn clean_reports(
     Ok(HttpResponse::Ok().finish())
 }
 
-fn parse_uuid(account_id: &str) -> Result<Uuid, CloudError> {
-    Uuid::from_str(account_id).map_err(|err| {
+fn parse_uuid(id: &str) -> Result<Uuid, CloudError> {
+    Uuid::from_str(id).map_err(|err| {
         tracing::debug!("failed to parse uuid: {}", err);
         CloudError::IncorrectAccountId
     })

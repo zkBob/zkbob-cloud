@@ -73,7 +73,8 @@ async fn process(cloud: &ZkBobCloud, id: &str, max_attempts: u32) -> ProcessResu
     };
 
     let mut reports = vec![];
-    for (account_id, _) in accounts {
+    let count = accounts.len();
+    for (i, (account_id, _)) in accounts.into_iter().enumerate() {
         let (account, _cleanup) = match cloud.get_account(account_id).await {
             Ok((account, cleanup)) => (account, cleanup),
             Err(err) => {
@@ -104,12 +105,16 @@ async fn process(cloud: &ZkBobCloud, id: &str, max_attempts: u32) -> ProcessResu
             address: info.address,
             sk,
         });
+
+        if i % 10 == 0 {
+            tracing::info!("[report task: {}] {} % processed", id, (i * 100) / count)
+        }
     }
 
     let report = Report {
         timestamp: timestamp(),
         pool_index: to_index,
-        account: reports,
+        accounts: reports,
     };
 
     tracing::info!("[report task: {}] processed successfully", id);

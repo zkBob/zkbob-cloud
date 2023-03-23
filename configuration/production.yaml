@@ -1,0 +1,5 @@
+relayer_url: "https://relayer-mvp.zkbob.com"
+web3:
+  provider_endpoint: "https://polygon-rpc.com"
+  pool_address: "0x72e6b59d4a90ab232e55d4bb7ed2dd17494d62fb"
+  
