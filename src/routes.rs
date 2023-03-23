@@ -42,6 +42,17 @@ pub async fn import(
     Ok(HttpResponse::Ok().finish())
 }
 
+pub async fn delete_account(
+    request: Query<AccountInfoRequest>,
+    cloud: Data<ZkBobCloud>,
+    bearer: BearerAuth,
+) -> Result<HttpResponse, CloudError> {
+    cloud.validate_token(bearer.token())?;
+    let id = parse_uuid(&request.id)?;
+    cloud.delete_account(id).await?;
+    Ok(HttpResponse::Ok().finish())
+}
+
 pub async fn list_accounts(
     bearer: BearerAuth,
     cloud: Data<ZkBobCloud>,
@@ -173,8 +184,8 @@ pub async fn clean_reports(
     Ok(HttpResponse::Ok().finish())
 }
 
-fn parse_uuid(account_id: &str) -> Result<Uuid, CloudError> {
-    Uuid::from_str(account_id).map_err(|err| {
+fn parse_uuid(id: &str) -> Result<Uuid, CloudError> {
+    Uuid::from_str(id).map_err(|err| {
         tracing::debug!("failed to parse uuid: {}", err);
         CloudError::IncorrectAccountId
     })

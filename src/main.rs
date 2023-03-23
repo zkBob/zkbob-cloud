@@ -1,7 +1,7 @@
 use actix_cors::Cors;
 use actix_web::{web::{JsonConfig, get, post, Data}, App, middleware::Logger, HttpServer, HttpResponse};
 use libzkbob_rs::libzeropool::{fawkes_crypto::backend::bellman_groth16::Parameters};
-use zkbob_cloud::{Engine, config::Config, errors::CloudError, version, cloud::ZkBobCloud, routes::{signup, account_info, list_accounts, generate_shielded_address, history, transfer, transaction_status, calculate_fee, export_key, transaction_trace, generate_report, report, clean_reports, import}};
+use zkbob_cloud::{Engine, config::Config, errors::CloudError, version, cloud::ZkBobCloud, routes::{signup, account_info, list_accounts, generate_shielded_address, history, transfer, transaction_status, calculate_fee, export_key, transaction_trace, generate_report, report, clean_reports, import, delete_account}};
 use zkbob_utils_rs::{telemetry::telemetry, contracts::pool::Pool, tracing};
 
 pub fn get_params(path: &str) -> Parameters<Engine> {
@@ -51,6 +51,7 @@ async fn main() -> std::io::Result<()> {
             .route("/version", get().to(version::version))
             .route("/signup", post().to(signup))
             .route("/import", post().to(import))
+            .route("deleteAccount", post().to(delete_account))
             .route("/accounts", get().to(list_accounts))
             .route("/transactionTrace", get().to(transaction_trace))
             .route("/export", get().to(export_key))

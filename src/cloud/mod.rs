@@ -9,7 +9,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use actix_web::web::Data;
 use libzkbob_rs::libzeropool::fawkes_crypto::{backend::bellman_groth16::Parameters, ff_uint::Num};
-use tokio::sync::RwLock;
+use tokio::{sync::RwLock, fs};
 use uuid::Uuid;
 use zkbob_utils_rs::{contracts::pool::Pool, tracing};
 
@@ -126,6 +126,24 @@ impl ZkBobCloud {
             self.new_account(account.description, Some(account.id), Some(account.sk)).await?;
         }
         Ok(())
+    }
+
+    pub async fn delete_account(&self, id: Uuid) -> Result<(), CloudError> {
+        let data = self.db.read().await
+            .get_account(id)?
+            .ok_or(CloudError::AccountNotFound)?;
+
+        let accounts = self.accounts.write().await;
+        if accounts.get(&id).is_some() {
+            return Err(CloudError::AccountIsBusy);
+        }
+
+        fs::remove_dir_all(&data.db_path).await.map_err(|err| {
+            tracing::warn!("failed to delete account data: {}", err);
+            CloudError::InternalError("failed to delete account data".to_string())
+        })?;
+
+        self.db.write().await.delete_account(id)
     }
 
     pub async fn list_accounts(&self) -> Result<Vec<AccountShortInfo>, CloudError> {

@@ -35,6 +35,10 @@ impl Db {
         self.db.exists(CloudDbColumn::Accounts.into(), id.as_bytes())
     }
 
+    pub fn delete_account(&mut self, id: Uuid) -> Result<(), CloudError> {
+        self.db.delete(CloudDbColumn::Accounts.into(), id.as_bytes())
+    }
+
     pub fn get_accounts(&self) -> Result<Vec<(Uuid, AccountData)>, CloudError> {
         let kv = self.db.get_all_with_keys(CloudDbColumn::Accounts.into())?;
         let mut accounts = Vec::new();
