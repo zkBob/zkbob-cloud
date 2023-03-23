@@ -15,10 +15,7 @@ use zkbob_utils_rs::{contracts::pool::Pool, tracing};
 
 use crate::{
     account::{history::HistoryTx, types::AccountInfo, Account},
-    cloud::{
-        db::AccountData,
-        types::{TransferPart, TransferStatus, TransferTask},
-    },
+    cloud::types::{TransferPart, TransferStatus, TransferTask, AccountData},
     config::Config,
     errors::CloudError,
     helpers::{timestamp, queue::Queue},
@@ -105,6 +102,10 @@ impl ZkBobCloud {
         sk: Option<Vec<u8>>,
     ) -> Result<Uuid, CloudError> {
         let id = id.unwrap_or(uuid::Uuid::new_v4());
+        if self.db.read().await.account_exists(id)? {
+            return Err(CloudError::DuplicateAccountId);
+        }
+
         let db_path = self.db.read().await.account_db_path(id);
         let account = Account::new(id, description.clone(), sk, self.pool_id, &db_path).await?;
         let id = account.id;
@@ -113,6 +114,7 @@ impl ZkBobCloud {
             &AccountData {
                 db_path,
                 description,
+                sk: account.export_key().await?,
             },
         )?;
         tracing::info!("created a new account: {}", id);
@@ -129,6 +131,7 @@ impl ZkBobCloud {
             .map(|(id, data)| AccountShortInfo {
                 id: id.as_hyphenated().to_string(),
                 description: data.description,
+                sk: data.sk,
             })
             .collect())
     }

@@ -1,10 +1,9 @@
-use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use zkbob_utils_rs::tracing;
 
 use crate::{errors::CloudError, helpers::db::KeyValueDb};
 
-use super::types::{TransferPart, TransferTask, ReportTask};
+use super::types::{TransferPart, TransferTask, ReportTask, AccountData};
 
 pub(crate) struct Db {
     db_path: String,
@@ -30,6 +29,10 @@ impl Db {
 
     pub fn get_account(&self, id: Uuid) -> Result<Option<AccountData>, CloudError> {
         self.db.get(CloudDbColumn::Accounts.into(), id.as_bytes())
+    }
+
+    pub fn account_exists(&self, id: Uuid) -> Result<bool, CloudError> {
+        self.db.exists(CloudDbColumn::Accounts.into(), id.as_bytes())
     }
 
     pub fn get_accounts(&self) -> Result<Vec<(Uuid, AccountData)>, CloudError> {
@@ -111,10 +114,4 @@ impl From<CloudDbColumn> for u32 {
     fn from(val: CloudDbColumn) -> Self {
         val as u32
     }
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct AccountData {
-    pub description: String,
-    pub db_path: String,
 }

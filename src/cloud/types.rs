@@ -4,11 +4,20 @@ use uuid::Uuid;
 
 use crate::{Fr, errors::CloudError};
 
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct AccountData {
+    pub description: String,
+    pub db_path: String,
+    pub sk: String,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AccountShortInfo {
     pub id: String,
     pub description: String,
+    pub sk: String,
 }
 
 pub struct Transfer {
