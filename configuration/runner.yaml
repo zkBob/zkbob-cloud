@@ -1,6 +1,5 @@
 relayer_url: "http://relayer:8000"
 web3:
   provider_endpoint: "http://anvil:8545"
-  provider_timeout_sec: 10
   pool_address: "0x0290FB167208Af455bB137780163b7B7a9a10C16"
   

@@ -85,6 +85,14 @@ impl Db {
             .ok_or(CloudError::InternalError("task part not found in db".to_string()))
     }
 
+    pub fn save_transaction_id(&mut self , tx_hash: &str, transaction_id: &str) -> Result<(), CloudError> {
+        self.db.save_string(CloudDbColumn::TransactionId.into(), tx_hash.as_bytes(), transaction_id)
+    }
+
+    pub fn get_transaction_id(&self, tx_hash: &str) -> Result<Option<String>, CloudError> {
+        self.db.get_string(CloudDbColumn::TransactionId.into(), tx_hash.as_bytes())
+    }
+
     pub fn save_report_task(&mut self, id: Uuid, task: &ReportTask) -> Result<(), CloudError> {
         self.db.save(CloudDbColumn::Reports.into(), id.as_bytes(), task)
     }
@@ -101,12 +109,13 @@ impl Db {
 pub enum CloudDbColumn {
     Accounts,
     Tasks,
+    TransactionId,
     Reports,
 }
 
 impl CloudDbColumn {
     pub fn count() -> u32 {
-        3
+        4
     }
 }
 

@@ -1,0 +1,5 @@
+relayer_url: "https://relayer.thgkjlr.website"
+web3:
+  provider_endpoint: "https://rpc.sepolia.org"
+  pool_address: "0x3bd088C19960A8B5d72E4e01847791BD0DD1C9E6"
+  

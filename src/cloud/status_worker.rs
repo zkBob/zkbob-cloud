@@ -1,8 +1,7 @@
-use std::{thread, str::FromStr, sync::Arc, collections::HashSet};
+use std::{thread, sync::Arc, collections::HashSet};
 
 use actix_web::web::Data;
 use tokio::{sync::RwLock};
-use uuid::Uuid;
 use zkbob_utils_rs::{tracing, relayer::types::JobResponse};
 
 use crate::{errors::CloudError, cloud::{send_worker::get_part, types::TransferStatus}, helpers::{timestamp, queue::receive_blocking}};
@@ -139,24 +138,8 @@ async fn postprocessing(cloud: &ZkBobCloud, process_result: &ProcessResult) -> R
 
     // it is not critical
     if process_result.save_transaction_id {
-        let account_id = match Uuid::from_str(&part.account_id) {
-            Ok(id) => id,
-            Err(err) => {
-                tracing::warn!("[status task: {}] failed to parse account_id: {}", &part.id, err);
-                return Ok(());
-            }
-        };
-
-        let (account, _cleanup) =  match cloud.get_account(account_id).await {
-            Ok((account, cleanup)) => (account, cleanup),
-            Err(err) => {
-                tracing::warn!("[status task: {}] failed to get account: {}", &part.id, err);
-                return Ok(());
-            }
-        };
-
         if let Some(tx_hash) = &part.tx_hash {
-            if let Err(err) = account.save_transaction_id(tx_hash, &part.request_id).await {
+            if let Err(err) = cloud.db.write().await.save_transaction_id(tx_hash, &part.request_id) {
                 tracing::warn!("[status task: {}] failed to save transaction id: {}", &part.id, err);
             }
         }

@@ -16,22 +16,17 @@ pub enum HistoryTxType {
     DirectDeposit,
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct HistoryTx {
     pub tx_type: HistoryTxType,
     pub tx_hash: String,
     pub timestamp: u64,
     pub amount: u64,
     pub fee: u64,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub to: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub transaction_id: Option<String>,
 }
 
 impl HistoryTx {
-    pub(crate) fn parse(memo: DecMemo, info: TxWeb3Info, transaction_id: Option<String>, last_account: Option<Account<Fr>>) -> Vec<HistoryTx> {
+    pub(crate) fn parse(memo: DecMemo, info: TxWeb3Info, last_account: Option<Account<Fr>>) -> Vec<HistoryTx> {
         let tx_hash = memo.tx_hash.clone().unwrap();
         let mut history = vec![];
         match info {
@@ -43,7 +38,6 @@ impl HistoryTx {
                     amount: token_amount as u64, 
                     fee, 
                     to: None, 
-                    transaction_id,
                 });
             }
             TxWeb3Info::DepositPermittable(timestamp, fee, token_amount) => {
@@ -53,8 +47,7 @@ impl HistoryTx {
                     timestamp, 
                     amount: token_amount as u64, 
                     fee, 
-                    to: None, 
-                    transaction_id, 
+                    to: None,  
                 });
             }
             TxWeb3Info::Transfer(timestamp, fee, _) => {
@@ -74,7 +67,6 @@ impl HistoryTx {
                         amount: amount.as_u64_amount(), 
                         fee, 
                         to: None, 
-                        transaction_id: transaction_id.clone(), 
                     });
                 }
 
@@ -99,7 +91,6 @@ impl HistoryTx {
                         amount: note.note.b.to_num().as_u64_amount(), 
                         fee, 
                         to: Some(address), 
-                        transaction_id: transaction_id.clone(), 
                     });
                 }
 
@@ -119,7 +110,6 @@ impl HistoryTx {
                         amount: note.note.b.to_num().as_u64_amount(), 
                         fee, 
                         to: Some(address), 
-                        transaction_id: transaction_id.clone(), 
                     });
                 }
             }
@@ -131,7 +121,6 @@ impl HistoryTx {
                     amount: (-(fee as i128 + token_amount)) as u64, 
                     fee, 
                     to: None, 
-                    transaction_id, 
                 });
             },
             TxWeb3Info::DirectDeposit(timestamp, fee) => {
@@ -146,7 +135,6 @@ impl HistoryTx {
                         amount: note.note.b.to_num().as_u64_amount(), 
                         fee,
                         to: Some(address), 
-                        transaction_id: transaction_id.clone(), 
                     });
                 }
             }

@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    account::history::{HistoryTx, HistoryTxType},
-    cloud::types::{TransferPart, TransferStatus, ReportStatus, Report},
+    account::history::HistoryTxType,
+    cloud::types::{TransferPart, TransferStatus, ReportStatus, Report, CloudHistoryTx},
 };
 
 #[derive(Serialize, Deserialize)]
@@ -109,7 +109,7 @@ pub struct HistoryRecord {
 }
 
 impl HistoryRecord {
-    pub fn prepare_records(txs: Vec<HistoryTx>) -> Vec<HistoryRecord> {
+    pub fn prepare_records(txs: Vec<CloudHistoryTx>) -> Vec<HistoryRecord> {
         txs.iter()
             .filter(|tx| tx.tx_type != HistoryTxType::AggregateNotes)
             .map(|tx| {
