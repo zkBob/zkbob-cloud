@@ -1,7 +1,7 @@
 use actix_cors::Cors;
 use actix_web::{web::{JsonConfig, get, post, Data}, App, middleware::Logger, HttpServer, HttpResponse};
 use libzkbob_rs::libzeropool::{fawkes_crypto::backend::bellman_groth16::Parameters};
-use zkbob_cloud::{Engine, config::Config, errors::CloudError, version, cloud::ZkBobCloud, routes::{signup, account_info, list_accounts, generate_shielded_address, history, transfer, transaction_status, calculate_fee, export_key, transaction_trace}};
+use zkbob_cloud::{Engine, config::Config, errors::CloudError, version, cloud::ZkBobCloud, routes::{signup, account_info, list_accounts, generate_shielded_address, history, transfer, transaction_status, calculate_fee, export_key, transaction_trace, generate_report, report, clean_reports}};
 use zkbob_utils_rs::{telemetry::telemetry, contracts::pool::Pool, tracing};
 
 pub fn get_params(path: &str) -> Parameters<Engine> {
@@ -59,6 +59,9 @@ async fn main() -> std::io::Result<()> {
             .route("/transactionTrace", get().to(transaction_trace))
             .route("/calculateFee", get().to(calculate_fee))
             .route("/export", get().to(export_key))
+            .route("/generateReport", post().to(generate_report))
+            .route("/report", get().to(report))
+            .route("/cleanReports", post().to(clean_reports))
     })
     .bind((host, port))?
     .run()

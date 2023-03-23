@@ -56,6 +56,8 @@ pub enum CloudError {
     ConfigError(String),
     #[error("rpc error")]
     Web3Error,
+    #[error("bad report id")]
+    ReportNotFound,
 }
 
 impl ResponseError for CloudError {

@@ -152,9 +152,12 @@ impl Account {
         Ok(parts)
     }
 
-    pub async fn sync(&self, relayer: &CachedRelayerClient) -> Result<(), CloudError> {
+    pub async fn sync(&self, relayer: &CachedRelayerClient, to_index: Option<u64>) -> Result<(), CloudError> {
         let account_index = self.next_index().await;
-        let relayer_index = relayer.info().await?.delta_index;
+        let relayer_index = match to_index {
+            Some(to_index) => to_index,
+            None => relayer.info().await?.delta_index
+        };
 
         let limit = (relayer_index - account_index) / (constants::OUT as u64 + 1);
         let txs = relayer.transactions(account_index, limit, false).await?;

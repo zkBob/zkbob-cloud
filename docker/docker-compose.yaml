@@ -12,7 +12,7 @@ services:
     volumes:
       - ../params:/app/params/
       - ../data:/app/data/
-      - ../configuration/runner.yaml:/app/configuration/config.yaml
+      - ../configuration/config.yaml:/app/configuration/config.yaml
     environment:
       CONFIG_FILE: /app/configuration/config.yaml
       RUST_LOG: info
