@@ -24,7 +24,7 @@ use crate::{
     Engine, Fr,
 };
 
-use self::{db::Db, send_worker::run_send_worker, status_worker::run_status_worker, types::{AccountShortInfo, Transfer, ReportTask, ReportStatus}, cleanup::AccountCleanup, report_worker::run_report_worker};
+use self::{db::Db, send_worker::run_send_worker, status_worker::run_status_worker, types::{AccountShortInfo, Transfer, ReportTask, ReportStatus, AccountImportData}, cleanup::AccountCleanup, report_worker::run_report_worker};
 
 pub struct ZkBobCloud {
     pub(crate) config: Data<Config>,
@@ -119,6 +119,13 @@ impl ZkBobCloud {
         )?;
         tracing::info!("created a new account: {}", id);
         Ok(id)
+    }
+
+    pub async fn import_accounts(&self, accounts: Vec<AccountImportData>) -> Result<(), CloudError> {
+        for account in accounts {
+            self.new_account(account.description, Some(account.id), Some(account.sk)).await?;
+        }
+        Ok(())
     }
 
     pub async fn list_accounts(&self) -> Result<Vec<AccountShortInfo>, CloudError> {

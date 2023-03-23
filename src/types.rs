@@ -8,9 +8,18 @@ use crate::{
 #[derive(Serialize, Deserialize)]
 pub struct SignupRequest {
     pub id: Option<String>,
-    pub sk: Option<String>,
     pub description: String,
+    pub sk: Option<String>,
 }
+
+#[derive(Deserialize)]
+pub struct ImportRequestItem {
+    pub id: String,
+    pub description: String,
+    pub sk: String,
+}
+
+pub type ImportRequest = Vec<ImportRequestItem>;
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

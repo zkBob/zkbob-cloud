@@ -20,6 +20,12 @@ pub struct AccountShortInfo {
     pub sk: String,
 }
 
+pub struct AccountImportData {
+    pub id: Uuid,
+    pub description: String,
+    pub sk: Vec<u8>,
+}
+
 pub struct Transfer {
     pub id: String,
     pub account_id: Uuid,
@@ -110,7 +116,7 @@ pub struct AccountReport {
 pub struct Report {
     pub timestamp: u64,
     pub pool_index: u64,
-    pub account: Vec<AccountReport>
+    pub accounts: Vec<AccountReport>
 }
 
 
