@@ -43,7 +43,7 @@ pub async fn import(
 }
 
 pub async fn delete_account(
-    request: Query<AccountInfoRequest>,
+    request: Json<AccountInfoRequest>,
     cloud: Data<ZkBobCloud>,
     bearer: BearerAuth,
 ) -> Result<HttpResponse, CloudError> {
@@ -97,14 +97,14 @@ pub async fn transfer(
 ) -> Result<HttpResponse, CloudError> {
     let account_id = parse_uuid(&request.account_id)?;
 
-    let request_id = cloud.transfer(Transfer{
-        id: request.request_id.clone().unwrap_or(Uuid::new_v4().as_hyphenated().to_string()),
+    let transaction_id = cloud.transfer(Transfer{
+        id: request.transaction_id.clone().unwrap_or(Uuid::new_v4().as_hyphenated().to_string()),
         account_id,
         amount: request.amount,
         to: request.to.clone(),
     }).await?;
 
-    Ok(HttpResponse::Ok().json(TransferResponse{ request_id }))
+    Ok(HttpResponse::Ok().json(TransferResponse{ transaction_id }))
 }
 
 pub async fn transaction_trace(
@@ -113,7 +113,7 @@ pub async fn transaction_trace(
     bearer: BearerAuth,
 ) -> Result<HttpResponse, CloudError> {
     cloud.validate_token(bearer.token())?;
-    let parts = cloud.transfer_status(&request.request_id).await?;
+    let parts = cloud.transfer_status(&request.transaction_id).await?;
     Ok(HttpResponse::Ok().json(parts))
 }
 
@@ -121,12 +121,12 @@ pub async fn transaction_status(
     request: Query<TransactionStatusRequest>,
     cloud: Data<ZkBobCloud>,
 ) -> Result<HttpResponse, CloudError> {
-    let parts = cloud.transfer_status(&request.request_id).await?;
+    let parts = cloud.transfer_status(&request.transaction_id).await?;
     Ok(HttpResponse::Ok().json(TransactionStatusResponse::from(parts)))
 }
 
 pub async fn calculate_fee(
-    request: Json<CalculateFeeRequest>,
+    request: Query<CalculateFeeRequest>,
     cloud: Data<ZkBobCloud>
 ) -> Result<HttpResponse, CloudError> {
     let account_id = parse_uuid(&request.account_id)?;
@@ -150,11 +150,11 @@ pub async fn generate_report(
     bearer: BearerAuth,
 ) -> Result<HttpResponse, CloudError> {
     cloud.validate_token(bearer.token())?;
-    let (id, task) = cloud.generate_report().await?;
+    let id = cloud.generate_report().await?;
     Ok(HttpResponse::Ok().json(ReportResponse {
         id: id.as_hyphenated().to_string(),
-        status: task.status,
-        report: task.report,
+        status: None,
+        report: None,
     }))
 }
 
@@ -168,7 +168,7 @@ pub async fn report(
     match cloud.get_report(report_id).await? {
         Some(task) => Ok(HttpResponse::Ok().json(ReportResponse {
             id: report_id.as_hyphenated().to_string(),
-            status: task.status,
+            status: Some(task.status),
             report: task.report,
         })),
         None => Err(CloudError::ReportNotFound)

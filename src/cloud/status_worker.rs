@@ -139,7 +139,7 @@ async fn postprocessing(cloud: &ZkBobCloud, process_result: &ProcessResult) -> R
     // it is not critical
     if process_result.save_transaction_id {
         if let Some(tx_hash) = &part.tx_hash {
-            if let Err(err) = cloud.db.write().await.save_transaction_id(tx_hash, &part.request_id) {
+            if let Err(err) = cloud.db.write().await.save_transaction_id(tx_hash, &part.transaction_id) {
                 tracing::warn!("[status task: {}] failed to save transaction id: {}", &part.id, err);
             }
         }

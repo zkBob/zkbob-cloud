@@ -40,7 +40,9 @@ pub struct ReportRequest {
 #[derive(Serialize, Deserialize)]
 pub struct ReportResponse {
     pub id: String,
-    pub status: ReportStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<ReportStatus>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub report: Option<Report>,
 }
 
@@ -53,7 +55,7 @@ pub struct GenerateAddressResponse {
 #[derive(Deserialize, Serialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct TransferRequest {
-    pub request_id: Option<String>,
+    pub transaction_id: Option<String>,
     pub account_id: String,
     pub amount: u64,
     pub to: String,
@@ -62,13 +64,13 @@ pub struct TransferRequest {
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TransferResponse {
-    pub request_id: String,
+    pub transaction_id: String,
 }
 
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TransactionStatusRequest {
-    pub request_id: String,
+    pub transaction_id: String,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -118,10 +120,10 @@ impl HistoryRecord {
                     .then_some(tx.fee);
 
                 match tx.transaction_id.clone() {
-                    Some(request_id) => {
+                    Some(transaction_id) => {
                         let linked_txs = txs
                             .iter()
-                            .filter(|tx| tx.transaction_id.as_ref() == Some(&request_id))
+                            .filter(|tx| tx.transaction_id.as_ref() == Some(&transaction_id))
                             .filter(|tx| tx.tx_type == HistoryTxType::AggregateNotes);
 
                         let linked_tx_hashes = linked_txs
@@ -142,7 +144,7 @@ impl HistoryRecord {
                             timestamp: tx.timestamp,
                             amount: tx.amount,
                             to: tx.to.clone(),
-                            transaction_id: Some(request_id),
+                            transaction_id: Some(transaction_id),
                         }
                     }
                     None => HistoryRecord {

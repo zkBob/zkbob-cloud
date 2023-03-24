@@ -109,7 +109,7 @@ impl TransferStatus {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct TransferPart {
     pub id: String,
-    pub request_id: String,
+    pub transaction_id: String,
     pub account_id: String,
     pub amount: Num<Fr>,
     pub fee: u64,
@@ -124,7 +124,7 @@ pub struct TransferPart {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct TransferTask {
-    pub request_id: String,
+    pub transaction_id: String,
     pub parts: Vec<String>
 }
 

@@ -62,7 +62,7 @@ impl Db {
     {
         self.db.save(
             CloudDbColumn::Tasks.into(),
-            task.request_id.as_bytes(),
+            task.transaction_id.as_bytes(),
             task,
         )?;
         self.db.save_all(CloudDbColumn::Tasks.into(), parts, |part| part.id.as_bytes().to_vec())
