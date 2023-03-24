@@ -1,6 +1,7 @@
 use serde::{Serialize, Deserialize};
 
 #[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AccountInfo {
     pub id: String,
     pub description: String,

@@ -189,6 +189,7 @@ impl ZkBobCloud {
 
     pub async fn calculate_fee(&self, id: Uuid, amount: u64) -> Result<(u64, u64), CloudError> {
         let (account, _cleanup) = self.get_account(id).await?;
+        account.sync(&self.relayer, None).await?;
         let parts = account
             .get_tx_parts(amount, self.relayer_fee, "dummy")
             .await?;
@@ -217,14 +218,14 @@ impl ZkBobCloud {
             .await?;
 
         let mut task = TransferTask {
-            request_id: request.id.clone(),
+            transaction_id: request.id.clone(),
             parts: Vec::new(),
         };
         let mut parts = Vec::new();
         for (i, tx_part) in tx_parts.into_iter().enumerate() {
             let part = TransferPart {
                 id: format!("{}.{}", &request.id, i),
-                request_id: request.id.clone(),
+                transaction_id: request.id.clone(),
                 account_id: request.account_id.to_string(),
                 amount: tx_part.1,
                 fee: self.relayer_fee,
@@ -261,7 +262,7 @@ impl ZkBobCloud {
         Ok(parts)
     }
 
-    pub async fn generate_report(&self) -> Result<(Uuid, ReportTask), CloudError> {
+    pub async fn generate_report(&self) -> Result<Uuid, CloudError> {
         let id = Uuid::new_v4();
         let task = ReportTask {
             status: ReportStatus::New,
@@ -270,7 +271,7 @@ impl ZkBobCloud {
         };
         self.db.write().await.save_report_task(id, &task)?;
         self.report_queue.write().await.send(id.as_hyphenated().to_string()).await?;
-        Ok((id, task))
+        Ok(id)
     }
 
     pub async fn get_report(&self, id: Uuid) -> Result<Option<ReportTask>, CloudError> {

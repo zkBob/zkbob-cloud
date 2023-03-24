@@ -2,17 +2,16 @@ version: '3.8'
 
 services:
   zkbob-cloud:
+    #image: ghcr.io/zkbob/zkbob-cloud-v2:${IMAGE_TAG:-main}
     build: 
       context: ..
       dockerfile: ./docker/Dockerfile
-      args:
-        VERSION__REF_NAME: local
-        VERSION__COMMIT_HASH: b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0
     container_name: zkbob-cloud
+    env_file: .env
     volumes:
       - ../params:/app/params/
       - ../data:/app/data/
-      - ../configuration/runner.yaml:/app/configuration/config.yaml
+      - ../configuration/${APP_ENVIRONMENT}.yaml:/app/configuration/config.yaml
     environment:
       CONFIG_FILE: /app/configuration/config.yaml
       RUST_LOG: info
