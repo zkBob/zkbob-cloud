@@ -10,12 +10,15 @@ A service that allows to manage multiple zkbob accounts in a custodial manner. I
 The available endpoints can be divided into "user" and "admin" categories. User endpoints only require an account id, while to use admin endpoints, you need to provide an `Authorization` header with the value `Bearer ${ADMIN_TOKEN}`.
 
 ### User API
+---
 **Retrive account information**
+
 This command initiate sync of the account.
 
 GET: `/account?id=${account_id}`
+
 Response:
-```
+```json
 {
     "id": "e7da526d-3f46-4f10-adf9-0f4fa9bb15ab",
     "description": "Bob",
@@ -24,13 +27,15 @@ Response:
     "address": "GwT2R98Q33q5EKKCTBgMqmdz2rRdFPfuWcLJ3Af5TmYu7iDEcS9xn6XQhWKspSA"
 }
 ```
-
+---
 **Retrieve account history**
+
 This command initiate sync of the account.
 
 GET: `/history?id=${account_id}`
+
 Response:
-```
+```json
 [
     {
         "txType": "TransferIn",
@@ -50,51 +55,60 @@ Response:
     }
 ]
 ```
-
+---
 **Generate a shielded address**
+
 GET: `/generateAddress?id=${account_id}`
+
 Response:
-```
+```json
 {
     "address": "NtYD4uisxHGXWXowLsXjBWMbLf9BFWtu4QwRZTGURFAGp8QhHc6E7jMp4V7UUc8"
 }
 ```
-
+---
 **Calculate the transfer fee**
+
 This command initiate sync of the account.
 
 GET: `/calculateFee?accountId=${account_id}&amount=${transfer_amount}`
+
 Response:
-```
+```json
 {
     "transactionCount": 1,
     "totalFee": 100000000
 }
 ```
-
+---
 **Execute a transfer**
+
 This command initiate sync of the account.
 
 POST: `/transfer`
+
 Body:
-```
+```json
 {
  	"accountId": "${account_id}",
  	"amount": "${transfer_amount}",
  	"to": "${shielded_address}"
 }
 ```
+
 Response:
-```
+```json
 {
     "transactionId": "ca7ddf90-cba3-4bbc-b28c-c966c461f3e0"
 }
 ```
-
+---
 **Get the status of a transaction**
+
 GET: `/transactionStatus?transactionId=${transaction_id}`
+
 Response:
-```
+```json
 {
     "status": "Done",
     "timestamp": 1679651006,
@@ -102,33 +116,39 @@ Response:
     "linkedTxHashes": []
 }
 ```
-
-#### Admin API
+---
+### Admin API
+---
 **Create a new user account**
+
 The `id` and `sk` parameters are optional.
 
 POST: `/signup`
+
 Body:
-```
+```json
 {
     "id": null,
     "description": "Bob",
     "sk": null
 }
 ```
+
 Response:
-```
+```json
 {
     "accountId": "e7da526d-3f46-4f10-adf9-0f4fa9bb15ab"
 }
 ```
-
+---
 **Import accounts**
+
 This command can be used to migrate accounts. Additional fields will be ignored.
 
 POST: `/import`
+
 Response: 
-```
+```json
 [
     {
         "id": "4ab0ea2c-dc70-48f3-8160-980d4f1fed94",
@@ -142,13 +162,15 @@ Response:
     }
 ]
 ```
-
+---
 **List all cloud accounts**
+
 This command does not initiate a sync of all accounts and can be used to export accounts.
 
 GET: `/accounts`
+
 Response:
-```
+```json
 [
     {
         "id": "4ab0ea2c-dc70-48f3-8160-980d4f1fed94",
@@ -162,41 +184,51 @@ Response:
     }
 ]
 ```
-
+---
 **Delete account**
+
 POST: `/deleteAccount`
+
 Body:
-```
+```json
 {
     "id": "${account_id}"
 }
 ```
+
 Response status: `OK`
 
+---
 **Export account sk**
+
 GET: `/export?id=0c2ebb2b-047a-4148-bce6-d3d891cfb846`
+
 Response:
-```
+```json
 {
     "sk": "3e2a25d79cf0f8d3d4615f7388ffee20d3cce4308c5928973650155481487f02"
 }
 ```
-
+---
 **Generate cloud report**
+
 This command syncs all accounts in the background and prepares a report with account balances, keys, and other information.
 
 POST: `/generateReport`
+
 Response:
-```
+```json
 {
     "id": "32e6c28f-e64f-4099-82f8-7f1d16b0ec5d"
 }
 ```
-
+---
 **Get cloud report**
+
 GET: `/report?id=${report_id}`
+
 Response:
-```
+```json
 {
     "id": "32e6c28f-e64f-4099-82f8-7f1d16b0ec5d",
     "status": "Completed",
@@ -224,25 +256,33 @@ Response:
     }
 }
 ```
-
+---
 **Clean all reports**
+
 POST: `/cleanReports`
+
 Response status: `OK`
 
-#### Service API
-
+---
+### Service API
+---
 **Health Check**
+
 GET: `/`
+
 Response status: `OK`
 
+---
 **Version**
+
 GET: `/version`
+
 Response:
-```
+```json
 {
     "ref": "main",
     "commitHash": "ab4ce14677621fa3a54f2ceb37da81157d80d7ea"
 }
 ```
-
+---
 
