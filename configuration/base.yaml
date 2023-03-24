@@ -1,27 +1,52 @@
+# cloud service host
 host: 0.0.0.0
+# cloud service port
 port: 8001
+# path to transfer circuit params
 transfer_params_path: "./params/transfer_params.bin"
+# directory where the database will be created
 db_path: "./data"
+# relayer url
 relayer_url: "https://relayer.thgkjlr.website"
+# redis url
 redis_url: "redis://zkbob-cloud-redis:6379"
+# bearer token that should be used to access the admin api
 admin_token: "123"
+
+# configuration of the web3 client
+web3:
+  # rpc url
+  provider_endpoint: "https://rpc.sepolia.org"
+  # timeout for rpc requests
+  provider_timeout_sec: 10
+  # address of pool contract
+  pool_address: "0x3bd088C19960A8B5d72E4e01847791BD0DD1C9E6"
+
+# configuration of the worker responsible for computing proofs and sending prepared transactions to the relayer
+send_worker:
+  # maximum number of attempts in case of temporary errors
+  max_attempts: 50
+  # delay before processing a task
+  queue_delay_sec: 0
+  # interval between processing attempts
+  queue_hidden_sec: 5
+
+# configuration of the worker responsible for checking the status of sent transactions
+status_worker:
+  # maximum number of attempts in case of temporary errors
+  max_attempts: 100
+  # delay before processing a task
+  queue_delay_sec: 5
+  # interval between processing attempts
+  queue_hidden_sec: 5
+
+# configuration of logging
 telemetry:
   kind: Stdout
   log_level: INFO
   service_name: zkbob-cloud
+
+# these parameters will be overridden in build image workflow
 version:
   ref_name: "main"
   commit_hash: "some_commit_hash"
-web3:
-  provider_endpoint: "https://rpc.sepolia.org"
-  provider_timeout_sec: 10
-  pool_address: "0x3bd088C19960A8B5d72E4e01847791BD0DD1C9E6"
-send_worker:
-  max_attempts: 5
-  queue_delay_sec: 0
-  queue_hidden_sec: 5
-status_worker:
-  max_attempts: 10
-  queue_delay_sec: 5
-  queue_hidden_sec: 5
-  

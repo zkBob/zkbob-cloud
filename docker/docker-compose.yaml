@@ -2,10 +2,10 @@ version: '3.8'
 
 services:
   zkbob-cloud:
-    #image: ghcr.io/zkbob/zkbob-cloud-v2:${IMAGE_TAG:-main}
-    build: 
-      context: ..
-      dockerfile: ./docker/Dockerfile
+    image: ghcr.io/zkbob/zkbob-cloud-v2:${IMAGE_TAG:-main}
+    # build: 
+    #   context: ..
+    #   dockerfile: ./docker/Dockerfile
     container_name: zkbob-cloud
     env_file: .env
     volumes:

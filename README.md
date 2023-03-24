@@ -9,6 +9,7 @@ A service that allows to manage multiple zkbob accounts in a custodial manner. I
 ## API
 The available endpoints can be divided into "user" and "admin" categories. User endpoints only require an account id, while to use admin endpoints, you need to provide an `Authorization` header with the value `Bearer ${ADMIN_TOKEN}`.
 
+---
 ### User API
 ---
 **Retrive account information**
