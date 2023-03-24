@@ -6,6 +6,9 @@ A service that allows to manage multiple zkbob accounts in a custodial manner. I
 2. Create a `.env` file in the `docker` directory. Choose the necessary environment (`runner`, `stage`, `production`) and assign it to the `APP_ENVIRONMENT` variable. Fill in the `ADMIN_TOKEN`. You can always override any of the parameters in `base.yaml` by specifying a new value in the `.env` file. For example, to override the `pool_address` parameter, use the `WEB3__POOL_ADDRESS` variable.
 3. To start the service, run the command `docker-compose -f ./docker/docker-compose.yaml up`.
 
+## Configuration
+Description of the config parameters can be found in `configuration/base.yaml`.
+
 ## API
 The available endpoints can be divided into "user" and "admin" categories. User endpoints only require an account id, while to use admin endpoints, you need to provide an `Authorization` header with the value `Bearer ${ADMIN_TOKEN}`.
 
