@@ -201,7 +201,7 @@ Response status: `OK`
 ---
 **Export account sk**
 
-GET: `/export?id=0c2ebb2b-047a-4148-bce6-d3d891cfb846`
+GET: `/export?id=${account_id}`
 
 Response:
 ```json
