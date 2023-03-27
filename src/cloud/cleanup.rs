@@ -22,10 +22,7 @@ impl Drop for AccountCleanup {
         let id = self.id;
         let accounts = self.accounts.clone();
         tokio::spawn(async move {
-            let mut accounts = accounts.write().await;
-            if accounts.contains_key(&id) {
-                accounts.remove(&id);
-            };
+            accounts.write().await.remove(&id);
         });
     }
 }

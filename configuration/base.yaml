@@ -26,6 +26,8 @@ web3:
 send_worker:
   # maximum number of attempts in case of temporary errors
   max_attempts: 50
+  # maximum number of parallel tasks
+  max_parallel: 10
   # delay before processing a task
   queue_delay_sec: 0
   # interval between processing attempts
@@ -35,6 +37,8 @@ send_worker:
 status_worker:
   # maximum number of attempts in case of temporary errors
   max_attempts: 100
+  # maximum number of parallel tasks
+  max_parallel: 20
   # delay before processing a task
   queue_delay_sec: 5
   # interval between processing attempts
