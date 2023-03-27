@@ -7,6 +7,7 @@ use crate::errors::CloudError;
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct WorkerConfig {
     pub max_attempts: u32,
+    pub max_parallel: usize,
     pub queue_delay_sec: u32,
     pub queue_hidden_sec: u32,
 }

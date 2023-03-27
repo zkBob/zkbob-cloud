@@ -6,6 +6,7 @@ use crate::Fr;
 
 pub mod db;
 pub mod queue;
+pub mod semaphore;
 
 pub trait AsU64Amount {
     fn as_u64_amount(&self) -> u64;
