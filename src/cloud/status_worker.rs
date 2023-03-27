@@ -1,32 +1,33 @@
-use std::{thread, sync::Arc, collections::HashSet};
+use std::{thread, sync::Arc};
 
 use actix_web::web::Data;
-use tokio::{sync::RwLock};
 use zkbob_utils_rs::{tracing, relayer::types::JobResponse};
 
-use crate::{errors::CloudError, cloud::{send_worker::get_part, types::TransferStatus}, helpers::{timestamp, queue::receive_blocking}};
+use crate::{errors::CloudError, cloud::{send_worker::get_part, types::TransferStatus}, helpers::{timestamp, queue::receive_blocking, semaphore::TaskSemaphore}};
 
 use super::{ZkBobCloud, types::TransferPart, cleanup::WorkerCleanup};
 
-pub(crate) fn run_status_worker(cloud: Data<ZkBobCloud>, max_attempts: u32) {
+pub(crate) fn run_status_worker(cloud: Data<ZkBobCloud>) {
     thread::spawn( move || {
         let _cleanup = WorkerCleanup;
         let rt = tokio::runtime::Runtime::new().expect("failed to init tokio runtime");
         rt.block_on(async move {
-            let in_progress = Arc::new(RwLock::new(HashSet::new()));
+            let max_attempts = cloud.config.status_worker.max_attempts;
+            let max_parallel = cloud.config.status_worker.max_parallel;
+            let semaphore = Arc::new(TaskSemaphore::new(max_parallel));
             loop {
                 let (redis_id, id) = receive_blocking::<String>(cloud.status_queue.clone()).await;
 
-                if !in_progress.write().await.insert(redis_id.clone()) {
-                    continue;
-                }
-
-                let in_progress = in_progress.clone();
                 let cloud = cloud.clone();
+                let semaphore = semaphore.clone();
                 tokio::spawn(async move {
+                    let _permit = match semaphore.try_acquire(&redis_id).await {
+                        Ok(permit) => permit,
+                        Err(_) => return
+                    };
+
                     let process_result = process(&cloud, &id, max_attempts).await;
                     if postprocessing(&cloud, &process_result).await.is_err() {
-                        in_progress.write().await.remove(&redis_id);
                         return;
                     }
                     
@@ -34,12 +35,8 @@ pub(crate) fn run_status_worker(cloud: Data<ZkBobCloud>, max_attempts: u32) {
                         let mut status_queue = cloud.status_queue.write().await;
                         if let Err(err) = status_queue.delete(&redis_id).await {
                             tracing::error!("[status task: {}] failed to delete task from queue: {}", &id, err);
-                            in_progress.write().await.remove(&redis_id);
-                            return;
                         }
                     }
-
-                    in_progress.write().await.remove(&redis_id);
                 });
             }
         });

@@ -1,36 +1,39 @@
-use std::{thread, str::FromStr, sync::Arc, collections::HashSet};
+use std::{thread, str::FromStr, sync::Arc};
 
 use actix_web::web::Data;
 use libzkbob_rs::proof::prove_tx;
 use memo_parser::calldata::transact::memo::TxType;
-use tokio::{sync::RwLock, task};
+use tokio::task;
 use uuid::Uuid;
 use zkbob_utils_rs::{tracing, relayer::types::{Proof, TransactionRequest}};
 
-use crate::{errors::CloudError, helpers::{timestamp, queue::receive_blocking}};
+use crate::{errors::CloudError, helpers::{timestamp, queue::receive_blocking, semaphore::TaskSemaphore}};
 
 use super::{ZkBobCloud, types::{TransferPart, TransferStatus}, cleanup::WorkerCleanup};
 
-pub(crate) fn run_send_worker(cloud: Data<ZkBobCloud>, max_attempts: u32) {
+pub(crate) fn run_send_worker(cloud: Data<ZkBobCloud>) {
     thread::spawn( move || {
         let _cleanup = WorkerCleanup;
         let rt = tokio::runtime::Runtime::new().expect("failed to init tokio runtime");
         rt.block_on(async move {
-            let in_progress = Arc::new(RwLock::new(HashSet::new()));
+            let max_attempts = cloud.config.send_worker.max_attempts;
+            let max_parallel = cloud.config.send_worker.max_parallel;
+            let semaphore = Arc::new(TaskSemaphore::new(max_parallel));
             loop {
                 let (redis_id, id) = receive_blocking::<String>(cloud.send_queue.clone()).await;
 
-                if !in_progress.write().await.insert(redis_id.clone()) {
-                    continue;
-                }
                 let cloud = cloud.clone();
-                let in_progress = in_progress.clone();
+                let semaphore = semaphore.clone();
                 tokio::spawn(async move {
+                    let _permit = match semaphore.try_acquire(&redis_id).await {
+                        Ok(permit) => permit,
+                        Err(_) => return
+                    };
+                    
                     let process_result = process(&cloud, &id, max_attempts).await;
                     if let Some(update) = process_result.update {
                         if let Err(err) = cloud.db.write().await.save_part(&update) {
                             tracing::error!("[send task: {}] failed to save processed task in db: {}", &id, err);
-                            in_progress.write().await.remove(&redis_id);
                             return;
                         }
                     }
@@ -38,7 +41,6 @@ pub(crate) fn run_send_worker(cloud: Data<ZkBobCloud>, max_attempts: u32) {
                     if process_result.check_status {
                         if let Err(err) = cloud.status_queue.write().await.send(id.clone()).await {
                             tracing::error!("[send task: {}] failed to send task to check status queue: {}", &id, err);
-                            in_progress.write().await.remove(&redis_id);
                             return;
                         }
                     }
@@ -47,12 +49,8 @@ pub(crate) fn run_send_worker(cloud: Data<ZkBobCloud>, max_attempts: u32) {
                         let mut send_queue = cloud.send_queue.write().await;
                         if let Err(err) = send_queue.delete(&redis_id).await {
                             tracing::error!("[send task: {}] failed to delete task from queue: {}", &id, err);
-                            in_progress.write().await.remove(&redis_id);
-                            return;
                         }
                     }
-
-                    in_progress.write().await.remove(&redis_id);
                 });
             }
         })        
