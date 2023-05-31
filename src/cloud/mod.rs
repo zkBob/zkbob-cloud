@@ -8,7 +8,10 @@ mod cleanup;
 use std::{collections::HashMap, sync::Arc};
 
 use actix_web::web::Data;
-use libzkbob_rs::libzeropool::fawkes_crypto::{backend::bellman_groth16::Parameters, ff_uint::Num};
+use libzkbob_rs::{
+    libzeropool::{fawkes_crypto::{backend::bellman_groth16::{Parameters, PrecomputedData}}, POOL_PARAMS},
+    pools::Pool as PoolId, address::parse_address
+};
 use tokio::{sync::RwLock, fs};
 use uuid::Uuid;
 use zkbob_utils_rs::{contracts::pool::Pool, tracing};
@@ -21,7 +24,7 @@ use crate::{
     helpers::{timestamp, queue::Queue},
     relayer::cached::CachedRelayerClient,
     web3::cached::CachedWeb3Client,
-    Engine, Fr,
+    Engine, Fr, PoolParams,
 };
 
 use self::{db::Db, send_worker::run_send_worker, status_worker::run_status_worker, types::{AccountShortInfo, Transfer, ReportTask, ReportStatus, AccountImportData, CloudHistoryTx}, cleanup::AccountCleanup, report_worker::run_report_worker};
@@ -29,8 +32,9 @@ use self::{db::Db, send_worker::run_send_worker, status_worker::run_status_worke
 pub struct ZkBobCloud {
     pub(crate) config: Data<Config>,
     pub(crate) db: RwLock<Db>,
-    pub(crate) pool_id: Num<Fr>,
+    pub(crate) pool_id: PoolId,
     pub(crate) params: Arc<Parameters<Engine>>,
+    pub(crate) precomputed: Arc<Option<PrecomputedData<Fr>>>,
 
     pub(crate) relayer_fee: u64,
     pub(crate) relayer: CachedRelayerClient,
@@ -47,7 +51,7 @@ impl ZkBobCloud {
     pub async fn new(
         config: Data<Config>,
         pool: Pool,
-        pool_id: Num<Fr>,
+        pool_id: PoolId,
         params: Parameters<Engine>,
     ) -> Result<Data<Self>, CloudError> {
         let db = Db::new(&config.db_path)?;
@@ -74,11 +78,13 @@ impl ZkBobCloud {
             
         let report_queue = Queue::new("report", &config.redis_url, 0, 180).await?;
 
+        let precomputed = Arc::new(config.precompute.then(|| params.precompute()));
         let cloud = Data::new(Self {
             config: config.clone(),
             db: RwLock::new(db),
             pool_id,
             params: Arc::new(params),
+            precomputed,
             relayer_fee,
             relayer,
             web3,
@@ -204,6 +210,13 @@ impl ZkBobCloud {
     pub async fn transfer(&self, request: Transfer) -> Result<String, CloudError> {
         if request.id.contains('.') {
             return Err(CloudError::InvalidTransactionId);
+        }
+
+        let (_, _, pool_id) = parse_address::<PoolParams>(&request.to, &POOL_PARAMS)
+            .map_err(|_| CloudError::InvalidZkAddress)?;
+
+        if pool_id.is_some() && pool_id.unwrap() != self.pool_id {
+            return Err(CloudError::InvalidZkAddress);
         }
 
         if self.db.read().await.task_exists(&request.id)? {

@@ -12,6 +12,8 @@ relayer_url: "https://relayer.thgkjlr.website"
 redis_url: "redis://zkbob-cloud-redis:6379"
 # bearer token that should be used to access the admin api
 admin_token: "123"
+# gates precompute flag (reduces proving time but increases RAM consumption)
+precompute: true
 
 # configuration of the web3 client
 web3:

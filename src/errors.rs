@@ -60,6 +60,8 @@ pub enum CloudError {
     Web3Error,
     #[error("bad report id")]
     ReportNotFound,
+    #[error("invalid zk address")]
+    InvalidZkAddress,
 }
 
 impl ResponseError for CloudError {

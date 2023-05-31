@@ -1,4 +1,4 @@
-use libzkbob_rs::{libzeropool::{fawkes_crypto::ff_uint::Num, native::account::Account}, address::format_address};
+use libzkbob_rs::{libzeropool::{fawkes_crypto::ff_uint::Num, native::account::Account}, address::format_address, pools::Pool as PoolId};
 use serde::Serialize;
 
 use crate::{web3::cached::TxWeb3Info, Fr, helpers::AsU64Amount, PoolParams};
@@ -26,7 +26,7 @@ pub struct HistoryTx {
 }
 
 impl HistoryTx {
-    pub(crate) fn parse(memo: DecMemo, info: TxWeb3Info, last_account: Option<Account<Fr>>) -> Vec<HistoryTx> {
+    pub(crate) fn parse(memo: DecMemo, info: TxWeb3Info, last_account: Option<Account<Fr>>, pool_id: PoolId) -> Vec<HistoryTx> {
         let tx_hash = memo.tx_hash.clone().unwrap();
         let mut history = vec![];
         match info {
@@ -82,7 +82,7 @@ impl HistoryTx {
                         HistoryTxType::TransferIn
                     };
                     let address =
-                        format_address::<PoolParams>(note.note.d, note.note.p_d);
+                        format_address::<PoolParams>(note.note.d, note.note.p_d, Some(pool_id));
 
                     history.push(HistoryTx { 
                         tx_type, 
@@ -101,7 +101,7 @@ impl HistoryTx {
                 });
                 for note in out_notes {
                     let address =
-                        format_address::<PoolParams>(note.note.d, note.note.p_d);
+                        format_address::<PoolParams>(note.note.d, note.note.p_d, Some(pool_id));
 
                     history.push(HistoryTx { 
                         tx_type: HistoryTxType::TransferOut, 
@@ -126,7 +126,7 @@ impl HistoryTx {
             TxWeb3Info::DirectDeposit(timestamp, fee) => {
                 for note in memo.in_notes.iter() {
                     let address =
-                        format_address::<PoolParams>(note.note.d, note.note.p_d);
+                        format_address::<PoolParams>(note.note.d, note.note.p_d, Some(pool_id));
 
                     history.push(HistoryTx { 
                         tx_type: HistoryTxType::DirectDeposit, 
