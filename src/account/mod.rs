@@ -7,7 +7,7 @@ use libzkbob_rs::{
         POOL_PARAMS, constants,
         native::account::Account as NativeAccount,
     },
-    random::CustomRng
+    random::CustomRng, pools::Pool as PoolId
 };
 use tokio::sync::RwLock;
 use uuid::Uuid;
@@ -24,6 +24,7 @@ mod db;
 pub struct Account {
     pub id: Uuid,
     pub description: String,
+    pub pool_id: PoolId,
 
     db: RwLock<Db>,
     inner: RwLock<UserAccount<Database, PoolParams>>,
@@ -34,7 +35,7 @@ impl Account {
         id: Uuid,
         description: String,
         sk: Option<Vec<u8>>,
-        pool_id: Num<Fr>,
+        pool_id: PoolId,
         db_path: &str,
     ) -> Result<Self, CloudError> {
         let mut db = Db::new(db_path)?;
@@ -54,10 +55,11 @@ impl Account {
             description,
             db: RwLock::new(db),
             inner: RwLock::new(inner),
+            pool_id,
         })
     }
 
-    pub fn load(id: Uuid, pool_id: Num<Fr>, db_path: &str) -> Result<Self, CloudError> {
+    pub fn load(id: Uuid, pool_id: PoolId, db_path: &str) -> Result<Self, CloudError> {
         let db = Db::new(db_path)?;
         let state = State::new(db.tree()?, db.txs()?);
 
@@ -74,6 +76,7 @@ impl Account {
             description,
             db: RwLock::new(db),
             inner: RwLock::new(inner),
+            pool_id,
         })
     }
 
@@ -208,7 +211,7 @@ impl Account {
             let info = web3.get_web3_info(tx_hash).await?;
             
             let account = memo.acc;
-            history.append(&mut HistoryTx::parse(memo, info, last_account));
+            history.append(&mut HistoryTx::parse(memo, info, last_account, self.pool_id));
 
             if let Some(acc) = account {
                 last_account = Some(acc);

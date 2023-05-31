@@ -1,13 +1,35 @@
 use actix_cors::Cors;
 use actix_web::{web::{JsonConfig, get, post, Data}, App, middleware::Logger, HttpServer, HttpResponse};
-use libzkbob_rs::libzeropool::{fawkes_crypto::backend::bellman_groth16::Parameters};
-use zkbob_cloud::{Engine, config::Config, errors::CloudError, version, cloud::ZkBobCloud, routes::{signup, account_info, list_accounts, generate_shielded_address, history, transfer, transaction_status, calculate_fee, export_key, transaction_trace, generate_report, report, clean_reports, import, delete_account}};
-use zkbob_utils_rs::{telemetry::telemetry, contracts::pool::Pool, tracing};
+use libzkbob_rs::{
+    libzeropool::fawkes_crypto::{backend::bellman_groth16::Parameters, ff_uint::Num},
+    pools::Pool as PoolId
+};
+use web3::types::U256;
+use zkbob_cloud::{Engine, config::Config, errors::CloudError, version, cloud::ZkBobCloud, routes::{signup, account_info, list_accounts, generate_shielded_address, history, transfer, transaction_status, calculate_fee, export_key, transaction_trace, generate_report, report, clean_reports, import, delete_account}, helpers::AsU32PoolId};
+use zkbob_utils_rs::{telemetry::telemetry, contracts::pool::Pool, tracing, configuration::Web3Settings};
 
 pub fn get_params(path: &str) -> Parameters<Engine> {
     let data = std::fs::read(path).expect("failed to read file with snark params");
     Parameters::<Engine>::read(&mut data.as_slice(), true, true)
         .expect("failed to parse file with snark params")
+}
+
+async fn init_pool(settings: &Web3Settings) -> (Pool, PoolId) {
+    let pool = Pool::new(settings).expect("failed to init pool");
+    let chain_id = pool.chain_id().await.expect("failed to fetch chain id");
+    let pool_id = pool.pool_id().await.expect("failed to get pool_id from contract");
+
+    let (pool, pool_id) = {
+        // sepolia pool exception
+        if pool_id == Num::from(0) && chain_id == U256::from(11155111) {
+            (pool, PoolId::SepoliaBOB)
+        } else {
+            let pool_id = PoolId::from_pool_id(pool_id.as_u32_pool_id()).expect("unknown pool");
+            (pool, pool_id)
+        }
+    };
+    tracing::info!("Pool: {}", pool_id.human_readable());
+    (pool, pool_id)
 }
 
 #[actix_web::main]
@@ -16,9 +38,7 @@ async fn main() -> std::io::Result<()> {
     telemetry::setup(&config.telemetry);
 
     let params = get_params(&config.transfer_params_path);
-    let pool = Pool::new(&config.web3).expect("failed to init pool");
-    let pool_id = pool.pool_id().await.expect("failed to get pool_id from contract");
-    tracing::info!("pool_id: {}", pool_id);
+    let (pool, pool_id) = init_pool(&config.web3).await;
 
     let host = config.host.clone();
     let port = config.port;

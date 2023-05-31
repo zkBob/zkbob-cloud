@@ -29,3 +29,13 @@ pub fn timestamp() -> u64 {
 pub fn invert<T, E>(x: Option<Result<T, E>>) -> Result<Option<T>, E> {
     x.map_or(Ok(None), |v| v.map(Some))
 }
+
+pub trait AsU32PoolId {
+    fn as_u32_pool_id(&self) -> u32;
+}
+
+impl AsU32PoolId for Num<Fr> {
+    fn as_u32_pool_id(&self) -> u32 {
+        self.to_uint().0.0[0] as u32 
+    }
+}

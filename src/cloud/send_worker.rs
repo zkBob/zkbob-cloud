@@ -127,6 +127,7 @@ async fn process(cloud: &ZkBobCloud, id: &str, max_attempts: u32) -> ProcessResu
     
     let prove_result = {
         let params = cloud.params.clone();
+        let precomputed = cloud.precomputed.clone();
         let proving_span = tracing::info_span!("proving", task_id = &part.id);
         task::spawn_blocking(move || {
             proving_span.in_scope(|| {
@@ -135,6 +136,7 @@ async fn process(cloud: &ZkBobCloud, id: &str, max_attempts: u32) -> ProcessResu
                     &*libzkbob_rs::libzeropool::POOL_PARAMS,
                     tx.public,
                     tx.secret,
+                    &precomputed,
                 )
             })
         }).await
