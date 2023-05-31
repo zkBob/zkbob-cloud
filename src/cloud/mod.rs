@@ -78,7 +78,7 @@ impl ZkBobCloud {
             
         let report_queue = Queue::new("report", &config.redis_url, 0, 180).await?;
 
-        let precomputed = Arc::new(Some(params.precompute()));
+        let precomputed = Arc::new(config.precompute.then(|| params.precompute()));
         let cloud = Data::new(Self {
             config: config.clone(),
             db: RwLock::new(db),

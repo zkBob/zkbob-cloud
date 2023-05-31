@@ -26,6 +26,7 @@ pub struct Config {
     pub web3: Web3Settings,
     pub send_worker: WorkerConfig,
     pub status_worker: WorkerConfig,
+    pub precompute: bool,
 }
 
 impl Config {
