@@ -385,7 +385,7 @@ dependencies = [
  "async-global-executor",
  "async-io",
  "async-lock",
- "crossbeam-utils 0.8.15",
+ "crossbeam-utils",
  "futures-channel",
  "futures-core",
  "futures-io",
@@ -856,7 +856,7 @@ version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "62ec6771ecfa0762d24683ee5a32ad78487a3d3afdc0fb8cae19d2c5deb50b7c"
 dependencies = [
- "crossbeam-utils 0.8.15",
+ "crossbeam-utils",
 ]
 
 [[package]]
@@ -942,48 +942,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6548a0ad5d2549e111e1f6a11a6c2e2d00ce6a3dafe22948d67c2b443f775e52"
 
 [[package]]
-name = "crossbeam"
-version = "0.7.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "69323bff1fb41c635347b8ead484a5ca6c3f11914d784170b158d8449ab07f8e"
-dependencies = [
- "cfg-if 0.1.10",
- "crossbeam-channel 0.4.4",
- "crossbeam-deque 0.7.4",
- "crossbeam-epoch 0.8.2",
- "crossbeam-queue",
- "crossbeam-utils 0.7.2",
-]
-
-[[package]]
-name = "crossbeam-channel"
-version = "0.4.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b153fe7cbef478c567df0f972e02e6d736db11affe43dfc9c56a9374d1adfb87"
-dependencies = [
- "crossbeam-utils 0.7.2",
- "maybe-uninit",
-]
-
-[[package]]
 name = "crossbeam-channel"
 version = "0.5.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a33c2bf77f2df06183c3aa30d1e96c0695a313d4f9c453cc3762a6db39f99200"
 dependencies = [
  "cfg-if 1.0.0",
- "crossbeam-utils 0.8.15",
-]
-
-[[package]]
-name = "crossbeam-deque"
-version = "0.7.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c20ff29ded3204c5106278a81a38f4b482636ed4fa1e6cfbeef193291beb29ed"
-dependencies = [
- "crossbeam-epoch 0.8.2",
- "crossbeam-utils 0.7.2",
- "maybe-uninit",
+ "crossbeam-utils",
 ]
 
 [[package]]
@@ -993,23 +958,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ce6fd6f855243022dcecf8702fef0c297d4338e226845fe067f6341ad9fa0cef"
 dependencies = [
  "cfg-if 1.0.0",
- "crossbeam-epoch 0.9.14",
- "crossbeam-utils 0.8.15",
-]
-
-[[package]]
-name = "crossbeam-epoch"
-version = "0.8.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "058ed274caafc1f60c4997b5fc07bf7dc7cca454af7c6e81edffe5f33f70dace"
-dependencies = [
- "autocfg",
- "cfg-if 0.1.10",
- "crossbeam-utils 0.7.2",
- "lazy_static",
- "maybe-uninit",
- "memoffset 0.5.6",
- "scopeguard",
+ "crossbeam-epoch",
+ "crossbeam-utils",
 ]
 
 [[package]]
@@ -1020,31 +970,9 @@ checksum = "46bd5f3f85273295a9d14aedfb86f6aadbff6d8f5295c4a9edb08e819dcf5695"
 dependencies = [
  "autocfg",
  "cfg-if 1.0.0",
- "crossbeam-utils 0.8.15",
- "memoffset 0.8.0",
+ "crossbeam-utils",
+ "memoffset",
  "scopeguard",
-]
-
-[[package]]
-name = "crossbeam-queue"
-version = "0.2.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "774ba60a54c213d409d5353bda12d49cd68d14e45036a285234c8d6f91f92570"
-dependencies = [
- "cfg-if 0.1.10",
- "crossbeam-utils 0.7.2",
- "maybe-uninit",
-]
-
-[[package]]
-name = "crossbeam-utils"
-version = "0.7.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c3c7c73a2d1e9fc0886a08b93e98eb643461230d5f1925e4036204d5f2e261a8"
-dependencies = [
- "autocfg",
- "cfg-if 0.1.10",
- "lazy_static",
 ]
 
 [[package]]
@@ -1269,41 +1197,18 @@ dependencies = [
 [[package]]
 name = "fawkes-crypto-bellman_ce"
 version = "0.3.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5a67c2c34da49cae5a38cfd872bb35b634f72716ea73c1a9a1426af8ae740981"
+source = "git+https://github.com/zkBob/phase2-bn254?branch=multicore-wasm#f484dbe81e1fd5707de4168a928c5a51e0389add"
 dependencies = [
  "bit-vec",
  "byteorder",
  "cfg-if 0.1.10",
- "crossbeam",
- "fawkes-crypto-pairing_ce 0.18.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "futures 0.1.31",
- "futures-cpupool",
+ "crossbeam-channel",
+ "fawkes-crypto-pairing_ce",
+ "lazy_static",
+ "log",
  "num_cpus",
  "rand 0.4.6",
-]
-
-[[package]]
-name = "fawkes-crypto-bellman_ce"
-version = "0.3.5"
-source = "git+https://github.com/zkBob/phase2-bn254?branch=multicore-wasm#f484dbe81e1fd5707de4168a928c5a51e0389add"
-dependencies = [
- "bit-vec",
- "byteorder",
- "cfg-if 0.1.10",
- "fawkes-crypto-pairing_ce 0.18.1 (git+https://github.com/zkBob/phase2-bn254?branch=multicore-wasm)",
- "rand 0.4.6",
-]
-
-[[package]]
-name = "fawkes-crypto-pairing_ce"
-version = "0.18.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6949d6a13fbd939f9dbb1b8c2113f75de69f46f2500ddaa3f23405fa04ce23df"
-dependencies = [
- "byteorder",
- "ff_ce",
- "rand 0.4.6",
+ "rayon",
 ]
 
 [[package]]
@@ -1314,29 +1219,6 @@ dependencies = [
  "byteorder",
  "ff_ce",
  "rand 0.4.6",
-]
-
-[[package]]
-name = "fawkes-crypto-zkbob"
-version = "4.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2812a198ffe5c6340fa51e1b175402d6b99eb6dd99f4d85a08fd139843dcea15"
-dependencies = [
- "bit-vec",
- "blake2-rfc_bellman_edition",
- "borsh",
- "brotli",
- "byteorder",
- "fawkes-crypto-bellman_ce 0.3.5 (registry+https://github.com/rust-lang/crates.io-index)",
- "fawkes-crypto_derive 4.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "ff-uint 0.2.4 (registry+https://github.com/rust-lang/crates.io-index)",
- "getrandom 0.2.9",
- "impl-trait-for-tuples 0.1.3",
- "itertools",
- "linked-list",
- "rand 0.7.3",
- "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -1349,9 +1231,9 @@ dependencies = [
  "borsh",
  "brotli",
  "byteorder",
- "fawkes-crypto-bellman_ce 0.3.5 (git+https://github.com/zkBob/phase2-bn254?branch=multicore-wasm)",
- "fawkes-crypto_derive 4.3.0 (git+https://github.com/zkBob/fawkes-crypto?branch=master)",
- "ff-uint 0.2.4 (git+https://github.com/zkBob/fawkes-crypto?branch=master)",
+ "fawkes-crypto-bellman_ce",
+ "fawkes-crypto_derive",
+ "ff-uint",
  "getrandom 0.2.9",
  "impl-trait-for-tuples 0.1.3",
  "itertools",
@@ -1366,49 +1248,18 @@ name = "fawkes-crypto-zkbob-keccak256"
 version = "0.1.1"
 source = "git+https://github.com/zkbob/keccak?branch=master#5112b2e188e400962685266c2ced2f2e9917d51e"
 dependencies = [
- "fawkes-crypto-zkbob 4.6.0 (git+https://github.com/zkBob/fawkes-crypto?branch=master)",
+ "fawkes-crypto-zkbob",
  "hex 0.3.2",
 ]
 
 [[package]]
 name = "fawkes-crypto_derive"
 version = "4.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "10cf36473727608ab489ff6b3b208263367ee272b52e34ab45ad82f6e0836ddc"
-dependencies = [
- "proc-macro2 1.0.59",
- "quote 1.0.28",
- "syn 1.0.109",
-]
-
-[[package]]
-name = "fawkes-crypto_derive"
-version = "4.3.0"
 source = "git+https://github.com/zkBob/fawkes-crypto?branch=master#7102b703cb82d0bb6434bf2a62ea2116d3eadaa2"
 dependencies = [
  "proc-macro2 1.0.59",
  "quote 1.0.28",
  "syn 1.0.109",
-]
-
-[[package]]
-name = "ff-uint"
-version = "0.2.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ecf8faaf3cb97a74ce279dd523fe61d467600e3faee3bee8d4639c29ae4f7a93"
-dependencies = [
- "borsh",
- "byteorder",
- "concat-idents",
- "crunchy",
- "ff-uint_derive 0.2.4 (registry+https://github.com/rust-lang/crates.io-index)",
- "rand 0.7.3",
- "rand_core 0.5.1",
- "ref-cast",
- "rustc-hex",
- "seedbox 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "serde",
- "static_assertions",
 ]
 
 [[package]]
@@ -1420,29 +1271,14 @@ dependencies = [
  "byteorder",
  "concat-idents",
  "crunchy",
- "ff-uint_derive 0.2.4 (git+https://github.com/zkBob/fawkes-crypto?branch=master)",
+ "ff-uint_derive",
  "rand 0.7.3",
  "rand_core 0.5.1",
  "ref-cast",
  "rustc-hex",
- "seedbox 0.2.0 (git+https://github.com/zkBob/fawkes-crypto?branch=master)",
+ "seedbox",
  "serde",
  "static_assertions",
-]
-
-[[package]]
-name = "ff-uint_derive"
-version = "0.2.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "be72cc249edaa75ad09bbe22b596efdc8715acc553f0d9ffdef271cdcea44e86"
-dependencies = [
- "num-bigint 0.3.3",
- "num-integer",
- "num-traits",
- "proc-macro-crate 0.1.5",
- "proc-macro2 1.0.59",
- "quote 1.0.28",
- "syn 1.0.109",
 ]
 
 [[package]]
@@ -1569,12 +1405,6 @@ checksum = "e6d5a32815ae3f33302d95fdcb2ce17862f8c65363dcfd29360480ba1001fc9c"
 
 [[package]]
 name = "futures"
-version = "0.1.31"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3a471a38ef8ed83cd6e40aa59c1ffe17db6855c18e3604d9c4ed8c08ebc28678"
-
-[[package]]
-name = "futures"
 version = "0.3.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "23342abe12aba583913b2e62f22225ff9c950774065e4bfb61a19cd9770fec40"
@@ -1603,16 +1433,6 @@ name = "futures-core"
 version = "0.3.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4bca583b7e26f571124fe5b7561d49cb2868d79116cfa0eefce955557c6fee8c"
-
-[[package]]
-name = "futures-cpupool"
-version = "0.1.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ab90cde24b3319636588d0c35fe03b1333857621051837ed769faefb4c2162e4"
-dependencies = [
- "futures 0.1.31",
- "num_cpus",
-]
 
 [[package]]
 name = "futures-executor"
@@ -2147,7 +1967,7 @@ version = "18.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "14f7f76aef2d054868398427f6c54943cf3d1caa9a7ec7d0c38d69df97a965eb"
 dependencies = [
- "futures 0.3.28",
+ "futures",
  "futures-executor",
  "futures-util",
  "log",
@@ -2276,7 +2096,7 @@ source = "git+https://github.com/zkBob/libzeropool-zkbob?branch=master#903369517
 dependencies = [
  "chacha20poly1305",
  "convert_case",
- "fawkes-crypto-zkbob 4.6.0 (git+https://github.com/zkBob/fawkes-crypto?branch=master)",
+ "fawkes-crypto-zkbob",
  "fawkes-crypto-zkbob-keccak256",
  "lazy_static",
  "serde",
@@ -2375,12 +2195,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2532096657941c2fea9c289d370a250971c689d4f143798ff67113ec042024a5"
 
 [[package]]
-name = "maybe-uninit"
-version = "2.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "60302e4db3a61da70c0cb7991976248362f30319e88850c487b9b95bbf059e00"
-
-[[package]]
 name = "memchr"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2400,15 +2214,6 @@ dependencies = [
  "thousands",
  "tokio",
  "web3 0.18.0",
-]
-
-[[package]]
-name = "memoffset"
-version = "0.5.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "043175f069eda7b85febe4a74abbaeff828d9f8b448515d3151a14a3542811aa"
-dependencies = [
- "autocfg",
 ]
 
 [[package]]
@@ -2621,7 +2426,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1e785d273968748578931e4dc3b4f5ec86b26e09d9e0d66b55adda7fce742f7a"
 dependencies = [
  "async-trait",
- "futures 0.3.28",
+ "futures",
  "futures-executor",
  "once_cell",
  "opentelemetry",
@@ -2663,7 +2468,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ca41c4933371b61c2a2f214bf16931499af4ec90543604ec828f7a625c09113"
 dependencies = [
  "async-trait",
- "crossbeam-channel 0.5.8",
+ "crossbeam-channel",
  "dashmap",
  "fnv",
  "futures-channel",
@@ -3226,9 +3031,9 @@ version = "1.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4b8f95bd6966f5c87776639160a66bd8ab9895d9d4ab01ddba9fc60661aebe8d"
 dependencies = [
- "crossbeam-channel 0.5.8",
- "crossbeam-deque 0.8.3",
- "crossbeam-utils 0.8.15",
+ "crossbeam-channel",
+ "crossbeam-deque",
+ "crossbeam-utils",
  "num_cpus",
 ]
 
@@ -3531,17 +3336,6 @@ dependencies = [
 [[package]]
 name = "seedbox"
 version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3ae30fedd5296a2bda1f186a0cf0f6b459f5d158bffb29a6ed4cde95dc5a2c68"
-dependencies = [
- "rand_chacha 0.3.1",
- "rand_core 0.6.4",
- "sha3 0.9.1",
-]
-
-[[package]]
-name = "seedbox"
-version = "0.2.0"
 source = "git+https://github.com/zkBob/fawkes-crypto?branch=master#7102b703cb82d0bb6434bf2a62ea2116d3eadaa2"
 dependencies = [
  "rand_chacha 0.3.1",
@@ -3729,7 +3523,7 @@ checksum = "41d1c5305e39e09653383c2c7244f2f78b3bcae37cf50c64cb4789c9f5096ec2"
 dependencies = [
  "base64 0.13.1",
  "bytes",
- "futures 0.3.28",
+ "futures",
  "httparse",
  "log",
  "rand 0.8.5",
@@ -4460,7 +4254,7 @@ dependencies = [
  "derive_more",
  "ethabi 16.0.0",
  "ethereum-types 0.12.1",
- "futures 0.3.28",
+ "futures",
  "futures-timer",
  "headers",
  "hex 0.4.3",
@@ -4495,7 +4289,7 @@ dependencies = [
  "derive_more",
  "ethabi 17.2.0",
  "ethereum-types 0.13.1",
- "futures 0.3.28",
+ "futures",
  "futures-timer",
  "headers",
  "hex 0.4.3",
@@ -4775,7 +4569,7 @@ dependencies = [
  "actix-web",
  "actix-web-httpauth",
  "config",
- "fawkes-crypto-zkbob 4.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "fawkes-crypto-zkbob",
  "hex 0.4.3",
  "kvdb-rocksdb",
  "libzkbob-rs",
